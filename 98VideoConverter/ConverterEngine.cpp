@@ -1,0 +1,936 @@
+// 98VideoConverter: Converts videos into .98v format, suitable for use with 98VIDEOP.COM
+// Maxim Hoxha 2022
+// This is the 'heart' of the encoder. Many settings are currently hardcoded for my ease
+// This software uses code of FFmpeg (http://ffmpeg.org) licensed under the LGPLv2.1 (http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
+
+#include "ConverterEngine.h"
+#include <string>
+#include <locale>
+extern "C"
+{
+	#include "include/libavutil/imgutils.h"
+	#include "include/libavutil/opt.h"
+}
+
+enum AVPixelFormat VideoConverterEngine::staticPixFmt; //bad kludge
+
+const int outWidth = PC_98_WIDTH; //Fix output to 640x400, the total screen resolution of the PC-98
+const int outHeight = PC_98_HEIGHT; //   AARRGGBB
+const unsigned int basepalette[16] = { 0xFF111111, //This palette I believe has good colour coverage
+								       0xFF771111,
+                                       0xFF227733,
+                                       0xFFDD4444, 
+                                       0xFF3333BB,
+									   0xFF33AAFF,
+									   0xFF55DD55,
+									   0xFF88FF55, 
+									   0xFF777777,
+									   0xFFBB33BB,
+									   0xFFFF77FF,
+									   0xFFFFBB77, 
+									   0xFFCCBB33,
+									   0xFF99FFFF,
+									   0xFFFFFF66,
+									   0xFFFFFFFF };
+
+const unsigned int rgbpalette[16] =      {  0xFF000000, //This palette is a simplistic RGB palette
+											0xFFFF0000,
+											0xFF00FF00,
+											0xFFFFFF00,
+											0xFF0000FF,
+											0xFFFF00FF,
+											0xFF00FFFF,
+											0xFFFFFFFF,
+                                            0xFF000000,
+											0xFF000000, 
+											0xFF000000, 
+											0xFF000000,
+											0xFF000000, 
+											0xFF000000, 
+											0xFF000000,
+											0xFF000000 };
+
+const unsigned int octreepalette[16] = { 0xFF111111, //This palette is an untweaked palette found by octree search. It may not be any good
+									     0xFF992222,
+									     0xFF666622,
+									     0xFFBB4444,
+									     0xFF4444BB,
+									     0xFFDD2266,
+									     0xFF33BB44,
+									     0xFF66DD22,
+									     0xFFBB33CC,
+									     0xFFDD99DD,
+									     0xFFBBBB44,
+									     0xFFDD6699,
+									     0xFF6699DD,
+									     0xFF44BBBB,
+									     0xFF22DD99,
+									     0xFFFFFFFF };
+									   
+const unsigned int greyscalepalette[16] = { 0xFF000000, //This palette is optimised such that a near-pure black and white video compresses well (i.e. the Bad Apple!! video)
+											0xFFFFFFFF,
+											0xFF111111,
+											0xFFEEEEEE,
+											0xFF222222,
+											0xFFDDDDDD,
+											0xFF333333,
+											0xFFCCCCCC,
+											0xFF444444,
+											0xFFBBBBBB,
+											0xFF555555,
+											0xFFAAAAAA,
+											0xFF666666,
+											0xFF999999,
+											0xFF777777,
+											0xFF888888 };
+
+VideoConverterEngine::VideoConverterEngine()
+{
+	alreadyOpen = false;
+	for (int i = 0; i < 16; i++)
+	{
+		palette[i] = basepalette[i];
+		floatpal[i][0] = ((float)((palette[i] & 0xFF000000) >> 24)) / 255.0f; //A
+		floatpal[i][1] = ((float)((palette[i] & 0x00FF0000) >> 16)) / 255.0f; //R
+		floatpal[i][2] = ((float)((palette[i] & 0x0000FF00) >> 8)) / 255.0f; //G
+		floatpal[i][3] = ((float)(palette[i] & 0x000000FF)) / 255.0f; //B
+		yuvpal[i][0] = RGBtoYUV[0] * floatpal[i][1] + RGBtoYUV[1] * floatpal[i][2] + RGBtoYUV[2] * floatpal[i][3]; //Y
+		yuvpal[i][1] = RGBtoYUV[3] * floatpal[i][1] + RGBtoYUV[4] * floatpal[i][2] + RGBtoYUV[5] * floatpal[i][3]; //U
+		yuvpal[i][2] = RGBtoYUV[6] * floatpal[i][1] + RGBtoYUV[7] * floatpal[i][2] + RGBtoYUV[8] * floatpal[i][3]; //V
+	}
+	uvbias = 1.0f;
+	RegenerateColourMap();
+	ditherfactor = 0.5f;
+	satditherfactor = 0.1f;
+	hueditherfactor = 1.0f;
+	planedata = new unsigned char*[4];
+	prevplanedata = new unsigned char*[4];
+	processedPlaneData = new unsigned short*[4];
+	actualdisplayplanes = new unsigned char*[4];
+	for (int i = 0; i < 4; i++)
+	{
+		planedata[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
+		prevplanedata[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
+		actualdisplayplanes[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
+		processedPlaneData[i] = new unsigned short[65536];
+		memset(planedata[i], 0x00000000, PC_98_ONEPLANE_BYTE); //The screen will be clear when we start up the player
+		memset(prevplanedata[i], 0x00000000, PC_98_ONEPLANE_BYTE);
+		memset(actualdisplayplanes[i], 0x00000000, PC_98_ONEPLANE_BYTE);
+	}
+	minKeepLength = 2; //Legacy parameters
+	minimpactperword = 0;
+	minimpactperrun = 0;
+	maxwordsperplane = 3400; //This quality paramter is preferred to the other ones
+	frameskip = 0;
+	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S16;
+	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 1, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Force to mono
+	hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
+}
+
+void VideoConverterEngine::ResetPlaneData()
+{
+	for (int i = 0; i < 4; i++)
+	{
+		memset(planedata[i], 0x00000000, PC_98_ONEPLANE_BYTE); //The screen will be clear when we start up the player
+		memset(prevplanedata[i], 0x00000000, PC_98_ONEPLANE_BYTE);
+	}
+}
+
+void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCallback)(unsigned int))
+{
+	ResetPlaneData();
+	RegenerateColourMap();
+	curtotalByteStreamSize = 0;
+	actualFramerate = PC_98_FRAMERATE / ((double)(frameskip + 1));
+	actualFrametime = ((double)(frameskip + 1)) / PC_98_FRAMERATE;
+	convnumFrames = (int)(totalTime/actualFrametime); //Get the actual number of frames we need to write
+	sampleratespec = GetSampleRateSpec(22050.0f);
+	realoutsamplerate = GetRealSampleRateFromSpec(sampleratespec); //Sample rate must be one of the options that the PC-9801-86 supports
+	CreateFullAudioStream();
+	av_seek_frame(fmtcontext, vidstreamIndex, 0, 0);
+	FILE* writefile;
+	std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>* strconv = new std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>();
+	std::string bytefname = strconv->to_bytes(outFileName);
+	unsigned int writebuf[16];
+	fopen_s(&writefile, bytefname.c_str(), "wb");
+	fwrite("98V", 1, 3, writefile); //Write signature
+	writebuf[0] = frameskip;
+	fwrite(writebuf, 1, 1, writefile); //Write frameskip
+	fwrite(&convnumFrames, 4, 1, writefile); //Write number of frames
+	writebuf[0] = 0x0000 | sampleratespec; //Force to 16-bits for now
+	fwrite(writebuf, 2, 1, writefile); //Write sample rate specifier
+	unsigned char* bufbytes = (unsigned char*)writebuf;
+	for (int i = 0; i < 16; i++)
+	{
+		*bufbytes = (((palette[i] & 0x00FF0000) >> 16) / 0x11) << 4;
+		*bufbytes |= ((palette[i] & 0x0000FF00) >> 8) / 0x11;
+		bufbytes++;
+		*bufbytes = ((palette[i] & 0x000000FF) / 0x11) << 4;
+		i++;
+		*bufbytes |= ((palette[i] & 0x00FF0000) >> 16) / 0x11;
+		bufbytes++;
+		*bufbytes = (((palette[i] & 0x0000FF00) >> 8) / 0x11) << 4;
+		*bufbytes |= (palette[i] & 0x000000FF) / 0x11;
+		bufbytes++;
+	}
+	fwrite(writebuf, 1, 24, writefile); //Write palette
+
+	unsigned short* curAudiodata;
+	unsigned int curAudioLength;
+	unsigned int curFrameLength[4];
+	unsigned int planesToWrite;
+	double curTime = 0.0;
+	double refTime = 0.0;
+	av_read_frame(fmtcontext, curPacket);
+	avcodec_send_packet(vidcodcontext, curPacket);
+	avcodec_receive_frame(vidcodcontext, curFrame);
+	/*/ //Hardware acceleration doesn't seem to work. Is this because of my system (at the time of writing, it has an IGPU) or is there an error in my code?
+	if (hardwareaccel)
+	{
+		av_hwframe_transfer_data(curFrame, curHWFrame, 0);
+	}
+	else
+	{
+		curFrame = curHWFrame;
+	}
+	//*/
+	av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
+	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	for (int i = 0; i < convnumFrames; i++)
+	{
+		memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
+
+		planesToWrite = 0;
+		curFrameLength[0] = 0;
+		curFrameLength[1] = 0;
+		curFrameLength[2] = 0;
+		curFrameLength[3] = 0;
+
+		//Convert it for display
+		unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
+		unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * topLeftY); //Cheeky reinterpretation
+		for (int i = 0; i < outHeight; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYUVAccel(inframeCol[j + i * outWidth], i, j);
+			}
+		}
+
+		CreatePlaneData();
+
+		curTime = actualFrametime * (i + 1);
+		curAudiodata = ProcessAudio(&curAudioLength, curTime);
+		fwrite(&curAudioLength, 2, 1, writefile); //Write audio length for this frame
+		fwrite(curAudiodata, 2, curAudioLength, writefile); //Write audio data
+		ProcessFrame(curFrameLength, &planesToWrite);
+		fwrite(&planesToWrite, 2, 1, writefile);
+		for (int j = 0; j < 4; j++)
+		{
+			if (planesToWrite & (0x1 << j))
+			{
+				fwrite(curFrameLength + j, 2, 1, writefile);
+				fwrite(processedPlaneData[j], 2, curFrameLength[j], writefile);
+			}
+		}
+		SimulateRealResult(planesToWrite, curFrameLength); //Reads data back
+		if (progressCallback != NULL)
+		{
+			if (progressCallback(i)) //Callback as a sort of progress indicator
+			{
+				return; //If the quit message has been emitted, return immediately.
+			}
+		}
+		
+		while (refTime < curTime) //Skip frames that are too close to each other
+		{
+			av_packet_unref(curPacket);
+			av_read_frame(fmtcontext, curPacket);
+			if (curPacket->data == nullptr)
+			{
+				break;
+			}
+			if (curPacket->stream_index != vidstreamIndex) continue;
+			avcodec_send_packet(vidcodcontext, curPacket);
+			avcodec_receive_frame(vidcodcontext, curFrame);
+			/*/
+			if (hardwareaccel)
+			{
+				av_hwframe_transfer_data(curFrame, curHWFrame, 0);
+			}
+			else
+			{
+				curFrame = curHWFrame;
+			}
+			//*/
+			refTime = (((double)curPacket->dts) * ((double)vidstream->time_base.num)) / ((double)vidstream->time_base.den);
+			if (curFrame->data[0] != nullptr)
+			{
+				av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
+				sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+			}
+		}
+	}
+
+	fclose(writefile); //we are done
+	delete strconv;
+}
+
+//Function was intended to be used for parallelisation, is currently not even implemented
+void VideoConverterEngine::DitherScanline(unsigned int* startInCol, unsigned int* startOutCol)
+{
+
+}
+
+//Convert our entire audio stream
+void VideoConverterEngine::CreateFullAudioStream()
+{
+	int numsamplesres = (int)(totalTime * realoutsamplerate);
+	audfullstreamShort = new short[numsamplesres + 65536]; //I'm not taking any chances
+	audfullstreamByte = new unsigned char[numsamplesres + 65536];
+	if (audstreamIndex == AVERROR_STREAM_NOT_FOUND)
+	{
+		memset(audfullstreamByte, 0, numsamplesres + 32768); //Set to silence if no audio stream was found
+		return;
+	}
+
+	
+	short* fullstreamptr = audfullstreamShort;
+	double refTime = 0.0;
+	double oldrefTime = -1.0;
+	int transferredSamples = 2048;
+	int sampleaddr = 0;
+	int endaddr = 1;
+	//Setup resampler
+	swr_alloc_set_opts2(&resamplercontext, &outlayout, outsampformat, realoutsamplerate, &inChLayout, inAudFormat, inAudioRate, 0, NULL);
+	swr_init(resamplercontext);
+	av_samples_alloc_array_and_samples(&audorigData, &audorigLineSize, inChLayout.nb_channels, 65536, inAudFormat, 0);
+	av_samples_alloc_array_and_samples(&audresData, &audresLineSize, outlayout.nb_channels, 65536, outsampformat, 0);
+	av_seek_frame(fmtcontext, audstreamIndex, 0, 0);
+
+	//Get the entire audio stream as a bunch of signed 16-bit integers
+	while (refTime < totalTime)
+	{
+		av_read_frame(fmtcontext, curPacket);
+		if (curPacket->data == nullptr)
+		{
+			break;
+		}
+		if (curPacket->stream_index != audstreamIndex)
+		{
+			av_packet_unref(curPacket);
+			continue;
+		}
+		avcodec_send_packet(audcodcontext, curPacket);
+		avcodec_receive_frame(audcodcontext, curFrame);
+		refTime = (((double)curFrame->pts) * ((double)audstream->time_base.num)) / ((double)audstream->time_base.den);
+		if (curFrame->data[0] != nullptr)
+		{
+			sampleaddr = (int)(refTime * (double)realoutsamplerate);
+			if (sampleaddr < 0) sampleaddr = 0;
+			av_samples_copy(audorigData, curFrame->data, 0, 0, curFrame->nb_samples, inChLayout.nb_channels, inAudFormat);
+			swr_convert(resamplercontext, audresData, transferredSamples, (const unsigned char**)audorigData, curFrame->nb_samples);
+			fullstreamptr = audfullstreamShort + sampleaddr;
+			memcpy(fullstreamptr, audresData[0], transferredSamples * 2);
+			oldrefTime = refTime;
+		}
+		av_packet_unref(curPacket);
+	}
+	
+	short lastsample = 0;
+	int curshift = 0;
+	short cursample = 0;
+	short curdiff = 0;
+	bool isnegative = false;
+	short curmax = 0x007F;
+	short curmin = 0xFF80;
+	for (int i = 0; i < numsamplesres; i++) //ADPCM encode
+	{
+		cursample = audfullstreamShort[i];
+		curdiff = cursample - lastsample;
+		isnegative = (curdiff & 0x8000) != 0;
+		if (isnegative)
+		{
+			if (curdiff < curmin)
+			{
+				curdiff = curmin;
+			}
+		}
+		else
+		{
+			if (curdiff > curmax)
+			{
+				curdiff = curmax;
+			}
+		}
+		curdiff >>= curshift;
+		audfullstreamByte[i] = (signed char)curdiff;
+		curdiff <<= curshift;
+		lastsample += curdiff;
+		curdiff >>= curshift;
+		if (isnegative) curdiff ^= 0xFFFF;
+		if (curdiff <= 0x0018) curshift--;
+		else if (curdiff >= 0x0068) curshift++;
+		if (curshift < 0) curshift = 0;
+		else if (curshift > 8) curshift = 8;
+		curmax = 0x7FFF >> (8 - curshift);
+		curmin = 0xFFFF8000 >> (8 - curshift);
+	}
+
+	swr_free(&resamplercontext);
+}
+
+//Get the ssamples from the full stream that are needed for this frame
+unsigned short* VideoConverterEngine::ProcessAudio(unsigned int* returnLength, double cutoffTime)
+{
+	unsigned short* streamptr = (unsigned short*)(audfullstreamByte) + curtotalByteStreamSize;
+	unsigned int thisChunkLength = 0;
+	double refTime = (((double)curtotalByteStreamSize) * 2.0) / (realoutsamplerate); //There are 2 samples in every 16-bit chunk
+	while (refTime < cutoffTime)
+	{
+		processedAudioData[thisChunkLength] = *streamptr++;
+		thisChunkLength++;
+		refTime = ((double)(curtotalByteStreamSize + thisChunkLength) * 2.0) / (realoutsamplerate);
+	}
+	curtotalByteStreamSize += thisChunkLength;
+	*returnLength = thisChunkLength;
+	return processedAudioData;
+}
+
+//Get the correct frame data
+void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int* returnuPlanes)
+{
+	unsigned int nummatches = 0;
+	unsigned int curmatchoffset = 0;
+	unsigned int curmatchlength = 0;
+	unsigned int curmatchimpact = 0;
+	unsigned int planedatalength = 0;
+	unsigned short* framedatptr;
+	unsigned short* prevframedatptr;
+	unsigned short* datawriteptr;
+	unsigned short fillcomp;
+	bool isfill;
+	*returnuPlanes = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		framedatptr = (unsigned short*)planedata[i];
+		prevframedatptr = (unsigned short*)prevplanedata[i];
+		datawriteptr = (unsigned short*)processedPlaneData[i];
+		nummatches = 0;
+
+		for (int j = 0; j < PC_98_ONEPLANE_WORD; j++) //Form impact number array
+		{
+			impactarray[j] = GetNumChangedBits(*framedatptr++, *prevframedatptr++);
+			if (impactarray[j] < minimpactperword) //Prune low-impact words
+			{
+				impactarray[j] = 0;
+			}
+			isalreadydesignatedfill[j] = false;
+		}
+
+		framedatptr = (unsigned short*)planedata[i];
+		prevframedatptr = (unsigned short*)prevplanedata[i];
+		for (int j = 0; j < PC_98_ONEPLANE_WORD; j++) //Find matches changing: fills first
+		{
+			if (*framedatptr != *prevframedatptr)
+			{
+				fillcomp = *framedatptr;
+				isfill = true;
+				curmatchoffset = j;
+				curmatchlength = 0;
+				curmatchimpact = 0;
+				while (impactarray[j] != 0 && *framedatptr == fillcomp)
+				{
+					curmatchimpact += impactarray[j];
+					curmatchlength++;
+					framedatptr++;
+					prevframedatptr++;
+					j++;
+				}
+				if (curmatchlength >= 8) //Short fills are pretty useless
+				{
+					matchesoffset[nummatches] = curmatchoffset << 1;
+					matchesoffset[nummatches] |= 0x8000;
+					matcheslength[nummatches] = curmatchlength;
+					matchesimpact[nummatches] = curmatchimpact;
+					for (int k = 0; k < curmatchlength; k++)
+					{
+						isalreadydesignatedfill[k + curmatchoffset] = true;
+					}
+					nummatches++;
+				}
+			}
+			framedatptr++;
+			prevframedatptr++;
+		}
+
+		framedatptr = (unsigned short*)planedata[i];
+		prevframedatptr = (unsigned short*)prevplanedata[i];
+		for (int j = 0; j < PC_98_ONEPLANE_WORD; j++) //Find matches changing
+		{
+			if (*framedatptr != *prevframedatptr)
+			{
+				fillcomp = *framedatptr;
+				isfill = false;
+				curmatchoffset = j;
+				curmatchlength = 0;
+				curmatchimpact = 0;
+				while (impactarray[j] != 0 && !isalreadydesignatedfill[j])
+				{
+					curmatchimpact += impactarray[j];
+					curmatchlength++;
+					framedatptr++;
+					prevframedatptr++;
+					j++;
+				}
+				if (curmatchimpact >= minimpactperrun && curmatchlength > 0) //Don't keep a match that has too small of an impact. Therefore this is a lossy codec
+				{
+					matchesoffset[nummatches] = curmatchoffset << 1;
+					matcheslength[nummatches] = curmatchlength;
+					matchesimpact[nummatches] = curmatchimpact;
+					nummatches++;
+				}
+			}
+			framedatptr++;
+			prevframedatptr++;
+		}
+
+		planedatalength = 0;
+		/*/
+		if (nummatches <= 0)
+		{
+			break;
+		}
+		//*/
+
+		//Sort the matches so that the most impactful runs come first
+		int stackdepth = 0;
+		int partindstack[128];
+		int startindstack[128];
+		int endindstack[128];
+		int sectionstack[128];
+		bool goingdownstack[128];
+		unsigned int pivotnum;
+		unsigned int swapnum1;
+		unsigned int swapnum2;
+		bool issorted = false;
+		startindstack[0] = 0;
+		endindstack[0] = nummatches - 1;
+		goingdownstack[0] = true;
+		while (!issorted)
+		{
+			if ((endindstack[stackdepth] - startindstack[stackdepth]) <= 0)
+			{
+				goingdownstack[stackdepth] = false;
+				goto endofcheck;
+			}
+			else if ((endindstack[stackdepth] - startindstack[stackdepth]) <= 1)
+			{
+				pivotnum = matchesimpact[endindstack[stackdepth]];
+				if (matchesimpact[startindstack[stackdepth]] < pivotnum)
+				{
+					swapnum1 = matchesimpact[startindstack[stackdepth]];
+					swapnum2 = matchesimpact[endindstack[stackdepth]];
+					matchesimpact[startindstack[stackdepth]] = swapnum2;
+					matchesimpact[endindstack[stackdepth]] = swapnum1;
+					swapnum1 = matcheslength[startindstack[stackdepth]];
+					swapnum2 = matcheslength[endindstack[stackdepth]];
+					matcheslength[startindstack[stackdepth]] = swapnum2;
+					matcheslength[endindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesoffset[startindstack[stackdepth]];
+					swapnum2 = matchesoffset[endindstack[stackdepth]];
+					matchesoffset[startindstack[stackdepth]] = swapnum2;
+					matchesoffset[endindstack[stackdepth]] = swapnum1;
+				}
+				goingdownstack[stackdepth] = false;
+				goto endofcheck;
+			}
+			pivotnum = matchesimpact[endindstack[stackdepth]];
+			partindstack[stackdepth] = startindstack[stackdepth];
+			for (int j = startindstack[stackdepth]; j < endindstack[stackdepth]; j++)
+			{
+				if (matchesimpact[j] > pivotnum)
+				{
+					swapnum1 = matchesimpact[j];
+					swapnum2 = matchesimpact[partindstack[stackdepth]];
+					matchesimpact[j] = swapnum2;
+					matchesimpact[partindstack[stackdepth]] = swapnum1;
+					swapnum1 = matcheslength[j];
+					swapnum2 = matcheslength[partindstack[stackdepth]];
+					matcheslength[j] = swapnum2;
+					matcheslength[partindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesoffset[j];
+					swapnum2 = matchesoffset[partindstack[stackdepth]];
+					matchesoffset[j] = swapnum2;
+					matchesoffset[partindstack[stackdepth]] = swapnum1;
+					partindstack[stackdepth]++;
+				}
+			}
+			swapnum1 = matchesimpact[endindstack[stackdepth]];
+			swapnum2 = matchesimpact[partindstack[stackdepth]];
+			matchesimpact[endindstack[stackdepth]] = swapnum2;
+			matchesimpact[partindstack[stackdepth]] = swapnum1;
+			swapnum1 = matcheslength[endindstack[stackdepth]];
+			swapnum2 = matcheslength[partindstack[stackdepth]];
+			matcheslength[endindstack[stackdepth]] = swapnum2;
+			matcheslength[partindstack[stackdepth]] = swapnum1;
+			swapnum1 = matchesoffset[endindstack[stackdepth]];
+			swapnum2 = matchesoffset[partindstack[stackdepth]];
+			matchesoffset[endindstack[stackdepth]] = swapnum2;
+			matchesoffset[partindstack[stackdepth]] = swapnum1;
+			endofcheck:
+			if (goingdownstack[stackdepth])
+			{
+				sectionstack[stackdepth] = 0;
+				goingdownstack[stackdepth] = false;
+				stackdepth++;
+				startindstack[stackdepth] = startindstack[stackdepth - 1];
+				endindstack[stackdepth] = partindstack[stackdepth - 1] - 1;
+				goingdownstack[stackdepth] = true;
+			}
+			else if (sectionstack[stackdepth - 1] == 0 && stackdepth > 0)
+			{
+				sectionstack[stackdepth - 1] = 1;
+				startindstack[stackdepth] = partindstack[stackdepth - 1] + 1;
+				endindstack[stackdepth] = endindstack[stackdepth - 1];
+			}
+			else
+			{
+				stackdepth--;
+				if (stackdepth < 0)
+				{
+					issorted = true;
+				}
+			}
+		}
+
+
+		for (int j = 0; j < nummatches; j++) //Commit matches
+		{
+			*datawriteptr = matchesoffset[j];
+			datawriteptr++;
+			*datawriteptr = matcheslength[j];
+			datawriteptr++;
+			framedatptr = (unsigned short*)(planedata[i] + (matchesoffset[j] & 0x7FFF));
+			if (matchesoffset[j] & 0x8000)
+			{
+				*datawriteptr = *framedatptr;
+				datawriteptr++;
+				planedatalength += 3;
+			}
+			else
+			{
+				memcpy(datawriteptr, framedatptr, matcheslength[j] << 1);
+				datawriteptr += matcheslength[j];
+				planedatalength += matcheslength[j] + 2;
+			}
+			if (planedatalength >= maxwordsperplane)
+			{
+				break; //break out if we've written too much data
+			}
+		}
+		returnLength[i] = planedatalength;
+		*returnuPlanes |= 0x1 << i;
+
+		unsigned short* datareadptr = (unsigned short*)processedPlaneData[i]; //Make previous comparison plane what it should be
+		unsigned int writeoffset;
+		unsigned int writelength;
+		for (int j = 0; j < planedatalength; j++)
+		{
+			writeoffset = *datareadptr;
+			datareadptr++;
+			writelength = *datareadptr;
+			datareadptr++;
+			datawriteptr = (unsigned short*)(prevplanedata[i] + (writeoffset & 0x7FFF));
+			if (writeoffset & 0x8000)
+			{
+				for (int k = 0; k < writelength; k++)
+				{
+					*datawriteptr++ = *datareadptr;
+				}
+				datareadptr++;
+				j += 2;
+			}
+			else
+			{
+				for (int k = 0; k < writelength; k++)
+				{
+					*datawriteptr++ = *datareadptr++;
+				}
+				j += writelength + 2;
+			}
+		}
+	}
+}
+
+//For use in the preview
+void VideoConverterEngine::SimulateRealResult(unsigned int updateplanes, unsigned int* planelengths)
+{
+	unsigned short* datareadptr;
+	unsigned short* datawriteptr;
+	unsigned char* midptr;
+	unsigned int* finalwriteptr;
+	unsigned int totalLength;
+	unsigned int writeoffset;
+	unsigned int writelength;
+
+	for (int i = 0; i < 4; i++) //Write to plane
+	{
+		if (!(updateplanes & (0x1 << i))) continue;
+		datareadptr = (unsigned short*)processedPlaneData[i];
+		totalLength = planelengths[i];
+		for (int j = 0; j < totalLength; j++)
+		{
+			writeoffset = *datareadptr;
+			datareadptr++;
+			writelength = *datareadptr;
+			datareadptr++;
+			datawriteptr = (unsigned short*)(actualdisplayplanes[i] + (writeoffset & 0x7FFF));
+			if (writeoffset & 0x8000)
+			{
+				for (int k = 0; k < writelength; k++)
+				{
+					*datawriteptr++ = *datareadptr;
+				}
+				datareadptr++;
+				j += 2;
+			}
+			else
+			{
+				for (int k = 0; k < writelength; k++)
+				{
+					*datawriteptr++ = *datareadptr++;
+				}
+				j += writelength + 2;
+			}
+		}
+	}
+
+	int planeind = 0;
+	int planeshift = 0;
+	int indcomp = 0;
+	int index = 0;
+	finalwriteptr = (unsigned int*)actualdisplaybuffer;
+	for (int i = 0; i < PC_98_RESOLUTION; i++) //Convert from planar data to colour
+	{
+		planeind = i / 8;
+		planeshift = 7 - (i & 0x7);
+		index = actualdisplayplanes[0][planeind] & (0x1 << planeshift);
+		index <<= 8;
+		index >>= planeshift + 8;
+		indcomp = actualdisplayplanes[1][planeind] & (0x1 << planeshift);
+		indcomp <<= 8;
+		indcomp >>= planeshift + 7;
+		index |= indcomp;
+		indcomp = actualdisplayplanes[2][planeind] & (0x1 << planeshift);
+		indcomp <<= 8;
+		indcomp >>= planeshift + 6;
+		index |= indcomp;
+		indcomp = actualdisplayplanes[3][planeind] & (0x1 << planeshift);
+		indcomp <<= 8;
+		indcomp >>= planeshift + 5;
+		index |= indcomp;
+		*finalwriteptr++ = palette[index];
+	}
+}
+
+//PC-98 VRAM is planar, and this codec respects that
+void VideoConverterEngine::CreatePlaneData()
+{
+	unsigned int* convframeptr = (unsigned int*)convertedFrame;
+
+	for (int i = 0; i < PC_98_RESOLUTION; i++) //Get colour indices
+	{
+		for (int j = 0; j < 16; j++)
+		{
+			if (*convframeptr == palette[j])
+			{
+				colind[i] = j;
+				colind[i] <<= 8; //Preshift index
+				break;
+			}
+		}
+		convframeptr++;
+	}
+
+	for (int i = 0; i < PC_98_ONEPLANE_BYTE; i++) //Write to bitplanes
+	{
+		planedata[0][i] = 0;
+		planedata[1][i] = 0;
+		planedata[2][i] = 0;
+		planedata[3][i] = 0;
+		for (int j = 0; j < 8; j++)
+		{
+			planedata[0][i] |= (colind[i*8 + j] & 0x100) >> (j + 1);
+			planedata[1][i] |= (colind[i*8 + j] & 0x200) >> (j + 2);
+			planedata[2][i] |= (colind[i*8 + j] & 0x400) >> (j + 3);
+			planedata[3][i] |= (colind[i*8 + j] & 0x800) >> (j + 4);
+		}
+	}
+}
+
+//Used only before total conversion since it's inefficient
+unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
+{
+	//Get our frame in
+	if(convertedFrame == nullptr) convertedFrame = new unsigned char[PC_98_RESOLUTION * 4];
+	double doubletime = ((double)framenumber * (double)vidstream->time_base.den * (double)vidstream->avg_frame_rate.den) / ((double)vidstream->avg_frame_rate.num * (double)vidstream->time_base.num);
+	unsigned long long actualTime = (unsigned long long) doubletime;
+	av_seek_frame(fmtcontext, vidstreamIndex, actualTime, 0);
+	av_read_frame(fmtcontext, curPacket);
+	avcodec_send_packet(vidcodcontext, curPacket);
+	avcodec_receive_frame(vidcodcontext, curFrame);
+	/*/
+	if (hardwareaccel)
+	{
+		av_hwframe_transfer_data(curFrame, curHWFrame, 0);
+	}
+	else
+	{
+		curFrame = curHWFrame;
+	}
+	//*/
+	av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
+	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
+
+	//Convert it for display
+	unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
+	unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * topLeftY); //Cheeky reinterpretation
+	for (int i = 0; i < outHeight; i++)
+	{
+		for (int j = 0; j < outWidth; j++)
+		{
+			*outframeCol++ = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+		}
+		outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (topLeftY + i + 1));
+	}
+
+	av_packet_unref(curPacket);
+
+	return convertedFrame;
+}
+
+//I thought this was necessary to set up hardware acceleration
+enum AVPixelFormat VideoConverterEngine::GetHWFormat(AVCodecContext* ctx, const enum AVPixelFormat* pixfmts)
+{
+	const enum AVPixelFormat* p;
+
+	for (p = pixfmts; *p != -1; p++) {
+		if (*p == staticPixFmt)
+			return *p;
+	}
+}
+
+//Sets up our converter upon loading a video file
+void VideoConverterEngine::OpenForDecodeVideo(wchar_t* inFileName)
+{
+	//Open video file
+	if (alreadyOpen) CloseDecoder();
+	std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>* strconv = new std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>();
+	std::string bytefname = strconv->to_bytes(inFileName);
+	avformat_open_input(&fmtcontext, bytefname.c_str(), NULL, NULL);
+	avformat_find_stream_info(fmtcontext, NULL);
+
+	//Locate video stream
+	vidstreamIndex = av_find_best_stream(fmtcontext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+	vidstream = fmtcontext->streams[vidstreamIndex];
+	const AVCodec* ac = avcodec_find_decoder(vidstream->codecpar->codec_id);
+	const AVCodecHWConfig* hwconfig;
+	int n = 0;
+	while (true)
+	{
+		hwconfig = avcodec_get_hw_config(ac, n);
+		if (!hwconfig)
+		{
+			hardwareaccel = false;
+			break;
+		}
+		else if ((hwconfig->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) && (hwconfig->device_type == hwtype))
+		{
+			hardwareaccel = true;
+			break;
+		}
+		n++;
+	}
+	vidcodcontext = avcodec_alloc_context3(ac);
+	vidcodcontext->get_format = GetHWFormat;
+	int errcod = 0;
+	if (hardwareaccel)
+	{
+		errcod = av_hwdevice_ctx_create(&hwcontext, hwtype, NULL, NULL, 0);
+		if (errcod < 0)
+		{
+			hardwareaccel = false;
+		}
+		else
+		{
+			vidcodcontext->hw_device_ctx = av_buffer_ref(hwcontext);
+		}
+	}
+	avcodec_parameters_to_context(vidcodcontext, vidstream->codecpar);
+	avcodec_open2(vidcodcontext, ac, NULL);
+	inWidth = vidcodcontext->width;
+	inHeight = vidcodcontext->height;
+	inPixFormat = vidcodcontext->pix_fmt;
+	staticPixFmt = inPixFormat;
+	vidorigBufsize = av_image_alloc(vidorigData, vidorigLineSize, inWidth, inHeight, inPixFormat, 1);
+	curFrame = av_frame_alloc();
+	curHWFrame = av_frame_alloc();
+	curPacket = av_packet_alloc();
+	nextPacket = av_packet_alloc();
+	innumFrames = vidstream->nb_frames;
+
+	//Locate audio stream
+	audstreamIndex = av_find_best_stream(fmtcontext, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+	if (audstreamIndex != AVERROR_STREAM_NOT_FOUND)
+	{
+		audstream = fmtcontext->streams[audstreamIndex];
+		ac = avcodec_find_decoder(audstream->codecpar->codec_id);
+		audcodcontext = avcodec_alloc_context3(ac);
+		avcodec_parameters_to_context(audcodcontext, audstream->codecpar);
+		avcodec_open2(audcodcontext, ac, NULL);
+		inAudioRate = audcodcontext->sample_rate;
+		inAudFormat = audcodcontext->sample_fmt;
+		inChLayout = audcodcontext->ch_layout;
+	}
+
+	//Setup rescaler
+	inAspect = ((double)inWidth) / ((double)inHeight);
+	if (inAspect > PC_98_ASPECT)
+	{
+		outWidth = PC_98_WIDTH;
+		outHeight = (int)(((double)PC_98_WIDTH) / inAspect);
+		topLeftX = 0;
+		topLeftY = (PC_98_HEIGHT - outHeight) / 2;
+	}
+	else if (inAspect < PC_98_ASPECT)
+	{
+		outHeight = PC_98_HEIGHT;
+		outWidth = (int)((double)PC_98_HEIGHT * inAspect);
+		topLeftY = 0;
+		topLeftX = (PC_98_WIDTH - outWidth) / 2;
+	}
+	else
+	{
+		outWidth = PC_98_WIDTH;
+		outHeight = PC_98_HEIGHT;
+		topLeftX = 0;
+		topLeftY = 0;
+	}
+	scalercontext = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
+	vidscaleBufsize = av_image_alloc(vidscaleData, vidscaleLineSize, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, 1);
+	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	alreadyOpen = true;
+	totalTime = (((double)(vidstream->duration)) * ((double)vidstream->time_base.num)) / ((double)vidstream->time_base.den);
+
+	delete strconv;
+}
+
+void VideoConverterEngine::CloseDecoder()
+{
+	sws_freeContext(scalercontext);
+	avcodec_free_context(&vidcodcontext);
+	avcodec_free_context(&audcodcontext);
+	avformat_close_input(&fmtcontext);
+}
