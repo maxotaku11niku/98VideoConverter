@@ -159,7 +159,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    mainWindow = hWnd;
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
-   workForm = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_FORMVIEW), hWnd, FormProc);
+   workForm = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_FORMVIEW), hWnd, (DLGPROC)FormProc);
    EnumChildWindows(workForm, FindSlider, NULL);
 
    return TRUE;
@@ -177,7 +177,7 @@ BOOL CALLBACK FindSlider(HWND hWnd, LPARAM lParam)
 
 const COMDLG_FILTERSPEC openFileTypes[] =
 {
-    {L"All supported video files", L"*.avi;*.mp4;*.mkv;*.mov"}
+    {L"All supported video files", L"*.avi;*.gif;*.mkv;*.mov;*.mp4;*.mpeg;*.mpg;*.wmv;*.webm"} //Can be extended to any that FFmpeg supports, but I would need to know the file extensions first
 };
 
 const COMDLG_FILTERSPEC saveFileTypes[] =
@@ -320,6 +320,11 @@ void TryOpenFile(HWND hWnd) //Just look at how many safety checks there are!
                                                 SendDlgItemMessageW(workForm, IDC_SEEKBAR, TBM_SETPOS, TRUE, 0);
                                                 curframepos = 0;
                                                 Static_SetText(seekframetext, L"0\0");
+                                                SetDlgItemInt(workForm, IDC_BITRATEEDIT, 2500, FALSE);
+                                                SetDlgItemInt(workForm, IDC_DITHERFACEDIT, 500, FALSE);
+                                                SetDlgItemInt(workForm, IDC_SATDITHERFACEDIT, 0, FALSE);
+                                                SetDlgItemInt(workForm, IDC_HUEDITHERFACEDIT, 1000, FALSE);
+                                                SetDlgItemInt(workForm, IDC_UVBEDIT, 1000, FALSE);
                                             }
                                             outItem->Release();
                                         }
@@ -487,7 +492,7 @@ bool ProgressReport(UINT32 frame)
     return inQuit;
 }
 
-INT_PTR CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(wParam);
     UNREFERENCED_PARAMETER(lParam);
@@ -524,35 +529,50 @@ INT_PTR CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDC_BITRATEEDIT:
             if (HIWORD(wParam) == EN_CHANGE)
             {
-                conv->SetBitrate(GetDlgItemInt(hWnd, IDC_BITRATEEDIT, NULL, FALSE));
+                if (conv != nullptr)
+                {
+                    conv->SetBitrate(GetDlgItemInt(hWnd, IDC_BITRATEEDIT, NULL, FALSE));
+                }
             }
             break;
         case IDC_DITHERFACEDIT:
             if (HIWORD(wParam) == EN_CHANGE)
             {
-                conv->SetDitherFactor(((float)GetDlgItemInt(hWnd, IDC_DITHERFACEDIT, NULL, FALSE)) / 1000.0f);
-                repaintPreview = true;
+                if (conv != nullptr)
+                {
+                    conv->SetDitherFactor(((float)GetDlgItemInt(hWnd, IDC_DITHERFACEDIT, NULL, FALSE)) / 1000.0f);
+                    repaintPreview = true;
+                }
             }
             break;
         case IDC_SATDITHERFACEDIT:
             if (HIWORD(wParam) == EN_CHANGE)
             {
-                conv->SetSaturationDitherFactor(((float)GetDlgItemInt(hWnd, IDC_SATDITHERFACEDIT, NULL, FALSE)) / 1000.0f);
-                repaintPreview = true;
+                if (conv != nullptr)
+                {
+                    conv->SetSaturationDitherFactor(((float)GetDlgItemInt(hWnd, IDC_SATDITHERFACEDIT, NULL, FALSE)) / 1000.0f);
+                    repaintPreview = true;
+                }
             }
             break;
         case IDC_HUEDITHERFACEDIT:
             if (HIWORD(wParam) == EN_CHANGE)
             {
-                conv->SetHueDitherFactor(((float)GetDlgItemInt(hWnd, IDC_HUEDITHERFACEDIT, NULL, FALSE)) / 1000.0f);
-                repaintPreview = true;
+                if (conv != nullptr)
+                {
+                    conv->SetHueDitherFactor(((float)GetDlgItemInt(hWnd, IDC_HUEDITHERFACEDIT, NULL, FALSE)) / 1000.0f);
+                    repaintPreview = true;
+                }
             }
             break;
         case IDC_UVBEDIT:
             if (HIWORD(wParam) == EN_CHANGE)
             {
-                conv->SetUVBias(((float)GetDlgItemInt(hWnd, IDC_UVBEDIT, NULL, FALSE)) / 1000.0f);
-                repaintPreview = true;
+                if (conv != nullptr)
+                {
+                    conv->SetUVBias(((float)GetDlgItemInt(hWnd, IDC_UVBEDIT, NULL, FALSE)) / 1000.0f);
+                    repaintPreview = true;
+                }
             }
             break;
         }

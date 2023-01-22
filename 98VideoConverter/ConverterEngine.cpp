@@ -101,7 +101,7 @@ VideoConverterEngine::VideoConverterEngine()
 	uvbias = 1.0f;
 	RegenerateColourMap();
 	ditherfactor = 0.5f;
-	satditherfactor = 0.1f;
+	satditherfactor = 0.0f;
 	hueditherfactor = 1.0f;
 	planedata = new unsigned char*[4];
 	prevplanedata = new unsigned char*[4];
@@ -120,7 +120,7 @@ VideoConverterEngine::VideoConverterEngine()
 	minKeepLength = 2; //Legacy parameters
 	minimpactperword = 0;
 	minimpactperrun = 0;
-	maxwordsperplane = 3400; //This quality paramter is preferred to the other ones
+	maxwordsperplane = 2500; //This quality paramter is preferred to the other ones
 	frameskip = 0;
 	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S16;
 	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 1, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Force to mono

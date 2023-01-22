@@ -6,5 +6,7 @@
 
 This program currently has a lot of hardcoded constants. These will be converted to modifiable variables in due time. Also, it's currently only a Windows program, so sorry if you don't use Windows.
 
+The source code for the particular version of the FFmpeg libraries (libav\*) I used is available here: (https://github.com/FFmpeg/FFmpeg/commit/eacfcbae69)
+
 # Building
 This is a Visual Studio project, so if you already have Visual Studio open this repository in Visual Studio. If you don't want to use Visual Studio, then you'll have to convert the project files. Remember to link against libav\*, otherwise you won't be able to compile the program.
