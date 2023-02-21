@@ -380,6 +380,8 @@ private:
 	short* audfullstreamShort;
 	unsigned char* audfullstreamByte;
 	int curtotalByteStreamSize;
+	bool isForcedBuzzerAudio;
+	bool isHalfVerticalResolution;
 
 	unsigned char* vidorigData[4];
 	int vidorigLineSize[4];
@@ -411,9 +413,12 @@ private:
 	float yuvpal[16][3];
 	float uvbias;
 	unsigned int colind[640 * 400];
-	unsigned int matchesoffset[8192];
-	unsigned int matcheslength[8192];
-	unsigned int matchesimpact[8192];
+	unsigned int** matchesoffset;
+	unsigned int** matcheslength;
+	unsigned int** matchesimpact;
+	bool** ismatchafill;
+	unsigned int foundfills[8192];
+	unsigned int foundcopies[8192];
 	unsigned int impactarray[PC_98_ONEPLANE_WORD];
 	bool isalreadydesignatedfill[PC_98_ONEPLANE_WORD];
 	int minKeepLength;

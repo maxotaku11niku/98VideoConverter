@@ -84,6 +84,23 @@ const unsigned int greyscalepalette[16] = { 0xFF000000, //This palette is optimi
 											0xFF777777,
 											0xFF888888 };
 
+const unsigned int bwpalette[16] = { 0xFF000000, //This palette is just pure black and white
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF,
+									 0xFF000000,
+									 0xFFFFFFFF };
+
 VideoConverterEngine::VideoConverterEngine()
 {
 	alreadyOpen = false;
@@ -107,12 +124,20 @@ VideoConverterEngine::VideoConverterEngine()
 	prevplanedata = new unsigned char*[4];
 	processedPlaneData = new unsigned short*[4];
 	actualdisplayplanes = new unsigned char*[4];
+	matchesoffset = new unsigned int*[4];
+	matcheslength = new unsigned int*[4];
+	matchesimpact = new unsigned int*[4];
+	ismatchafill = new bool*[4];
 	for (int i = 0; i < 4; i++)
 	{
 		planedata[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
 		prevplanedata[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
 		actualdisplayplanes[i] = new unsigned char[PC_98_ONEPLANE_BYTE];
 		processedPlaneData[i] = new unsigned short[65536];
+		matchesoffset[i] = new unsigned int[8192];
+		matcheslength[i] = new unsigned int[8192];
+		matchesimpact[i] = new unsigned int[8192];
+		ismatchafill[i] = new bool[8192];
 		memset(planedata[i], 0x00000000, PC_98_ONEPLANE_BYTE); //The screen will be clear when we start up the player
 		memset(prevplanedata[i], 0x00000000, PC_98_ONEPLANE_BYTE);
 		memset(actualdisplayplanes[i], 0x00000000, PC_98_ONEPLANE_BYTE);
@@ -125,6 +150,8 @@ VideoConverterEngine::VideoConverterEngine()
 	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S16;
 	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 1, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Force to mono
 	hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
+	isForcedBuzzerAudio = false;
+	isHalfVerticalResolution = false;
 }
 
 void VideoConverterEngine::ResetPlaneData()
@@ -157,7 +184,9 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 	writebuf[0] = frameskip;
 	fwrite(writebuf, 1, 1, writefile); //Write frameskip
 	fwrite(&convnumFrames, 4, 1, writefile); //Write number of frames
-	writebuf[0] = 0x0000 | sampleratespec; //Force to 16-bits for now
+	writebuf[0] = 0x0000 | sampleratespec;
+	writebuf[0] |= isForcedBuzzerAudio ? 0x0008 : 0x0000;
+	writebuf[0] |= isHalfVerticalResolution ? 0x0010 : 0x0000;
 	fwrite(writebuf, 2, 1, writefile); //Write sample rate specifier
 	unsigned char* bufbytes = (unsigned char*)writebuf;
 	for (int i = 0; i < 16; i++)
@@ -213,7 +242,7 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYUVAccel(inframeCol[j + i * outWidth], i, j);
+				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYUV(inframeCol[j + i * outWidth], i, j);
 			}
 		}
 
@@ -400,23 +429,27 @@ unsigned short* VideoConverterEngine::ProcessAudio(unsigned int* returnLength, d
 //Get the correct frame data
 void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int* returnuPlanes)
 {
-	unsigned int nummatches = 0;
+	unsigned int nummatches[4];
+	unsigned int numfills = 0;
+	unsigned int numcopies = 0;
 	unsigned int curmatchoffset = 0;
 	unsigned int curmatchlength = 0;
 	unsigned int curmatchimpact = 0;
 	unsigned int planedatalength = 0;
+	unsigned int fullmatchesimpact[4];
+	int maxwordsfixed[4];
+	unsigned int planeorder[4];
 	unsigned short* framedatptr;
 	unsigned short* prevframedatptr;
 	unsigned short* datawriteptr;
 	unsigned short fillcomp;
 	bool isfill;
 	*returnuPlanes = 0;
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 4; i++) //Find matches and how much of an impact them all combined make
 	{
 		framedatptr = (unsigned short*)planedata[i];
 		prevframedatptr = (unsigned short*)prevplanedata[i];
-		datawriteptr = (unsigned short*)processedPlaneData[i];
-		nummatches = 0;
+		nummatches[i] = 0;
 
 		for (int j = 0; j < PC_98_ONEPLANE_WORD; j++) //Form impact number array
 		{
@@ -447,17 +480,17 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 					prevframedatptr++;
 					j++;
 				}
-				if (curmatchlength >= 8) //Short fills are pretty useless
+				if (curmatchlength >= 4) //Short fills are pretty useless
 				{
-					matchesoffset[nummatches] = curmatchoffset << 1;
-					matchesoffset[nummatches] |= 0x8000;
-					matcheslength[nummatches] = curmatchlength;
-					matchesimpact[nummatches] = curmatchimpact;
+					matchesoffset[i][nummatches[i]] = curmatchoffset << 1;
+					matcheslength[i][nummatches[i]] = curmatchlength;
+					matchesimpact[i][nummatches[i]] = curmatchimpact;
+					ismatchafill[i][nummatches[i]] = true;
 					for (int k = 0; k < curmatchlength; k++)
 					{
 						isalreadydesignatedfill[k + curmatchoffset] = true;
 					}
-					nummatches++;
+					nummatches[i]++;
 				}
 			}
 			framedatptr++;
@@ -485,37 +518,38 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 				}
 				if (curmatchimpact >= minimpactperrun && curmatchlength > 0) //Don't keep a match that has too small of an impact. Therefore this is a lossy codec
 				{
-					matchesoffset[nummatches] = curmatchoffset << 1;
-					matcheslength[nummatches] = curmatchlength;
-					matchesimpact[nummatches] = curmatchimpact;
-					nummatches++;
+					matchesoffset[i][nummatches[i]] = curmatchoffset << 1;
+					matcheslength[i][nummatches[i]] = curmatchlength;
+					matchesimpact[i][nummatches[i]] = curmatchimpact;
+					ismatchafill[i][nummatches[i]] = false;
+					nummatches[i]++;
 				}
 			}
 			framedatptr++;
 			prevframedatptr++;
 		}
 
-		planedatalength = 0;
-		/*/
-		if (nummatches <= 0)
+		fullmatchesimpact[i] = 0;
+		if (nummatches[i] <= 0)
 		{
-			break;
+			continue;
 		}
-		//*/
 
 		//Sort the matches so that the most impactful runs come first
 		int stackdepth = 0;
-		int partindstack[128];
-		int startindstack[128];
-		int endindstack[128];
-		int sectionstack[128];
-		bool goingdownstack[128];
+		int partindstack[256];
+		int startindstack[256];
+		int endindstack[256];
+		int sectionstack[256];
+		bool goingdownstack[256];
 		unsigned int pivotnum;
 		unsigned int swapnum1;
 		unsigned int swapnum2;
+		bool swapbool1;
+		bool swapbool2;
 		bool issorted = false;
 		startindstack[0] = 0;
-		endindstack[0] = nummatches - 1;
+		endindstack[0] = nummatches[i] - 1;
 		goingdownstack[0] = true;
 		while (!issorted)
 		{
@@ -526,59 +560,71 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 			}
 			else if ((endindstack[stackdepth] - startindstack[stackdepth]) <= 1)
 			{
-				pivotnum = matchesimpact[endindstack[stackdepth]];
-				if (matchesimpact[startindstack[stackdepth]] < pivotnum)
+				pivotnum = matchesimpact[i][endindstack[stackdepth]];
+				if (matchesimpact[i][startindstack[stackdepth]] < pivotnum)
 				{
-					swapnum1 = matchesimpact[startindstack[stackdepth]];
-					swapnum2 = matchesimpact[endindstack[stackdepth]];
-					matchesimpact[startindstack[stackdepth]] = swapnum2;
-					matchesimpact[endindstack[stackdepth]] = swapnum1;
-					swapnum1 = matcheslength[startindstack[stackdepth]];
-					swapnum2 = matcheslength[endindstack[stackdepth]];
-					matcheslength[startindstack[stackdepth]] = swapnum2;
-					matcheslength[endindstack[stackdepth]] = swapnum1;
-					swapnum1 = matchesoffset[startindstack[stackdepth]];
-					swapnum2 = matchesoffset[endindstack[stackdepth]];
-					matchesoffset[startindstack[stackdepth]] = swapnum2;
-					matchesoffset[endindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesimpact[i][startindstack[stackdepth]];
+					swapnum2 = matchesimpact[i][endindstack[stackdepth]];
+					matchesimpact[i][startindstack[stackdepth]] = swapnum2;
+					matchesimpact[i][endindstack[stackdepth]] = swapnum1;
+					swapnum1 = matcheslength[i][startindstack[stackdepth]];
+					swapnum2 = matcheslength[i][endindstack[stackdepth]];
+					matcheslength[i][startindstack[stackdepth]] = swapnum2;
+					matcheslength[i][endindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesoffset[i][startindstack[stackdepth]];
+					swapnum2 = matchesoffset[i][endindstack[stackdepth]];
+					matchesoffset[i][startindstack[stackdepth]] = swapnum2;
+					matchesoffset[i][endindstack[stackdepth]] = swapnum1;
+					swapbool1 = ismatchafill[i][startindstack[stackdepth]];
+					swapbool2 = ismatchafill[i][endindstack[stackdepth]];
+					ismatchafill[i][startindstack[stackdepth]] = swapbool2;
+					ismatchafill[i][endindstack[stackdepth]] = swapbool1;
 				}
 				goingdownstack[stackdepth] = false;
 				goto endofcheck;
 			}
-			pivotnum = matchesimpact[endindstack[stackdepth]];
+			pivotnum = matchesimpact[i][endindstack[stackdepth]];
 			partindstack[stackdepth] = startindstack[stackdepth];
 			for (int j = startindstack[stackdepth]; j < endindstack[stackdepth]; j++)
 			{
-				if (matchesimpact[j] > pivotnum)
+				if (matchesimpact[i][j] > pivotnum)
 				{
-					swapnum1 = matchesimpact[j];
-					swapnum2 = matchesimpact[partindstack[stackdepth]];
-					matchesimpact[j] = swapnum2;
-					matchesimpact[partindstack[stackdepth]] = swapnum1;
-					swapnum1 = matcheslength[j];
-					swapnum2 = matcheslength[partindstack[stackdepth]];
-					matcheslength[j] = swapnum2;
-					matcheslength[partindstack[stackdepth]] = swapnum1;
-					swapnum1 = matchesoffset[j];
-					swapnum2 = matchesoffset[partindstack[stackdepth]];
-					matchesoffset[j] = swapnum2;
-					matchesoffset[partindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesimpact[i][j];
+					swapnum2 = matchesimpact[i][partindstack[stackdepth]];
+					matchesimpact[i][j] = swapnum2;
+					matchesimpact[i][partindstack[stackdepth]] = swapnum1;
+					swapnum1 = matcheslength[i][j];
+					swapnum2 = matcheslength[i][partindstack[stackdepth]];
+					matcheslength[i][j] = swapnum2;
+					matcheslength[i][partindstack[stackdepth]] = swapnum1;
+					swapnum1 = matchesoffset[i][j];
+					swapnum2 = matchesoffset[i][partindstack[stackdepth]];
+					matchesoffset[i][j] = swapnum2;
+					matchesoffset[i][partindstack[stackdepth]] = swapnum1;
+					swapbool1 = ismatchafill[i][j];
+					swapbool2 = ismatchafill[i][partindstack[stackdepth]];
+					ismatchafill[i][j] = swapbool2;
+					ismatchafill[i][partindstack[stackdepth]] = swapbool1;
 					partindstack[stackdepth]++;
 				}
 			}
-			swapnum1 = matchesimpact[endindstack[stackdepth]];
-			swapnum2 = matchesimpact[partindstack[stackdepth]];
-			matchesimpact[endindstack[stackdepth]] = swapnum2;
-			matchesimpact[partindstack[stackdepth]] = swapnum1;
-			swapnum1 = matcheslength[endindstack[stackdepth]];
-			swapnum2 = matcheslength[partindstack[stackdepth]];
-			matcheslength[endindstack[stackdepth]] = swapnum2;
-			matcheslength[partindstack[stackdepth]] = swapnum1;
-			swapnum1 = matchesoffset[endindstack[stackdepth]];
-			swapnum2 = matchesoffset[partindstack[stackdepth]];
-			matchesoffset[endindstack[stackdepth]] = swapnum2;
-			matchesoffset[partindstack[stackdepth]] = swapnum1;
-			endofcheck:
+			swapnum1 = matchesimpact[i][endindstack[stackdepth]];
+			swapnum2 = matchesimpact[i][partindstack[stackdepth]];
+			matchesimpact[i][endindstack[stackdepth]] = swapnum2;
+			matchesimpact[i][partindstack[stackdepth]] = swapnum1;
+			swapnum1 = matcheslength[i][endindstack[stackdepth]];
+			swapnum2 = matcheslength[i][partindstack[stackdepth]];
+			matcheslength[i][endindstack[stackdepth]] = swapnum2;
+			matcheslength[i][partindstack[stackdepth]] = swapnum1;
+			swapnum1 = matchesoffset[i][endindstack[stackdepth]];
+			swapnum2 = matchesoffset[i][partindstack[stackdepth]];
+			matchesoffset[i][endindstack[stackdepth]] = swapnum2;
+			matchesoffset[i][partindstack[stackdepth]] = swapnum1;
+			swapbool1 = ismatchafill[i][endindstack[stackdepth]];
+			swapbool2 = ismatchafill[i][partindstack[stackdepth]];
+			ismatchafill[i][endindstack[stackdepth]] = swapbool2;
+			ismatchafill[i][partindstack[stackdepth]] = swapbool1;
+		endofcheck:
 			if (goingdownstack[stackdepth])
 			{
 				sectionstack[stackdepth] = 0;
@@ -604,60 +650,154 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 			}
 		}
 
-
-		for (int j = 0; j < nummatches; j++) //Commit matches
+		for (int j = 0; j < nummatches[i]; j++)
 		{
-			*datawriteptr = matchesoffset[j];
-			datawriteptr++;
-			*datawriteptr = matcheslength[j];
-			datawriteptr++;
-			framedatptr = (unsigned short*)(planedata[i] + (matchesoffset[j] & 0x7FFF));
-			if (matchesoffset[j] & 0x8000)
+			fullmatchesimpact[i] += matchesimpact[i][j];
+		}
+	}
+
+	unsigned int totalmaximpact = 0; //Reallocate plane sizes based on their impact
+	for (int i = 0; i < 4; i++)
+	{
+		totalmaximpact += fullmatchesimpact[i];
+	}
+	if (totalmaximpact <= 0)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			maxwordsfixed[i] = maxwordsperplane;
+			planeorder[i] = i;
+		}
+	}
+	else
+	{
+		unsigned int totalframedata = maxwordsperplane * 4;
+		double wordsperimpact = ((double)totalframedata) / ((double)totalmaximpact);
+		for (int i = 0; i < 4; i++)
+		{
+			maxwordsfixed[i] = (unsigned int)(wordsperimpact * ((double)fullmatchesimpact[i]));
+			planeorder[i] = 0xFF;
+		}
+		int curmax = 0;
+		int curmaxplaneind = 0;
+		bool alreadyinorder;
+		for (int i = 0; i < 4; i++)
+		{
+			curmax = -9999;
+			curmaxplaneind = 0;
+			for (int j = 0; j < 4; j++)
 			{
-				*datawriteptr = *framedatptr;
-				datawriteptr++;
+				alreadyinorder = false;
+				for (int k = 0; k < 4; k++)
+				{
+					if (j == planeorder[k])
+					{
+						alreadyinorder = true;
+						break;
+					}
+				}
+				if (alreadyinorder) continue;
+				if (maxwordsfixed[j] > curmax)
+				{
+					curmaxplaneind = j;
+					curmax = maxwordsfixed[j];
+				}
+			}
+			planeorder[i] = curmaxplaneind;
+		}
+	}
+
+	for (int n = 0; n < 4; n++) //Commit data with fixed plane size allocations
+	{
+		int i = planeorder[n];
+		datawriteptr = (unsigned short*)processedPlaneData[i];
+		numfills = 0;
+		numcopies = 0;
+
+		planedatalength = 2;
+		for (int j = 0; j < nummatches[i]; j++) //Organise fills and copies
+		{
+			if (ismatchafill[i][j])
+			{
+				foundfills[numfills] = j;
+				numfills++;
 				planedatalength += 3;
 			}
 			else
 			{
-				memcpy(datawriteptr, framedatptr, matcheslength[j] << 1);
-				datawriteptr += matcheslength[j];
-				planedatalength += matcheslength[j] + 2;
+				foundcopies[numcopies] = j;
+				numcopies++;
+				planedatalength += matcheslength[i][j] + 2;
 			}
-			if (planedatalength >= maxwordsperplane)
+			if (planedatalength >= maxwordsfixed[i])
 			{
-				break; //break out if we've written too much data
+				break; //break out if we're going to write too much data
 			}
 		}
+
+		if (planedatalength < maxwordsfixed[i] && n < 3) //Push excess onto next plane
+		{
+			maxwordsfixed[planeorder[n + 1]] += maxwordsfixed[i] - planedatalength;
+		}
+		
+		//Commit fills
+		*datawriteptr = numfills;
+		datawriteptr++;
+		for (int j = 0; j < numfills; j++)
+		{
+			*datawriteptr = matchesoffset[i][foundfills[j]];
+			datawriteptr++;
+			*datawriteptr = matcheslength[i][foundfills[j]];
+			datawriteptr++;
+			*datawriteptr = *((unsigned short*)(planedata[i] + matchesoffset[i][foundfills[j]]));
+			datawriteptr++;
+		}
+
+		//Commit copies
+		*datawriteptr = numcopies;
+		datawriteptr++;
+		for (int j = 0; j < numcopies; j++)
+		{
+			*datawriteptr = matchesoffset[i][foundcopies[j]];
+			datawriteptr++;
+			*datawriteptr = matcheslength[i][foundcopies[j]];
+			datawriteptr++;
+			memcpy(datawriteptr, (unsigned short*)(planedata[i] + matchesoffset[i][foundcopies[j]]), matcheslength[i][foundcopies[j]] << 1);
+			datawriteptr += matcheslength[i][foundcopies[j]];
+		}
+
 		returnLength[i] = planedatalength;
 		*returnuPlanes |= 0x1 << i;
 
 		unsigned short* datareadptr = (unsigned short*)processedPlaneData[i]; //Make previous comparison plane what it should be
 		unsigned int writeoffset;
 		unsigned int writelength;
-		for (int j = 0; j < planedatalength; j++)
+
+		datareadptr++;
+		for (int j = 0; j < numfills; j++)
 		{
 			writeoffset = *datareadptr;
 			datareadptr++;
 			writelength = *datareadptr;
 			datareadptr++;
-			datawriteptr = (unsigned short*)(prevplanedata[i] + (writeoffset & 0x7FFF));
-			if (writeoffset & 0x8000)
+			datawriteptr = (unsigned short*)(prevplanedata[i] + writeoffset);
+			for (int k = 0; k < writelength; k++)
 			{
-				for (int k = 0; k < writelength; k++)
-				{
-					*datawriteptr++ = *datareadptr;
-				}
-				datareadptr++;
-				j += 2;
+				*datawriteptr++ = *datareadptr;
 			}
-			else
+			datareadptr++;
+		}
+		datareadptr++;
+		for (int j = 0; j < numcopies; j++)
+		{
+			writeoffset = *datareadptr;
+			datareadptr++;
+			writelength = *datareadptr;
+			datareadptr++;
+			datawriteptr = (unsigned short*)(prevplanedata[i] + writeoffset);
+			for (int k = 0; k < writelength; k++)
 			{
-				for (int k = 0; k < writelength; k++)
-				{
-					*datawriteptr++ = *datareadptr++;
-				}
-				j += writelength + 2;
+				*datawriteptr++ = *datareadptr++;
 			}
 		}
 	}
@@ -671,6 +811,8 @@ void VideoConverterEngine::SimulateRealResult(unsigned int updateplanes, unsigne
 	unsigned char* midptr;
 	unsigned int* finalwriteptr;
 	unsigned int totalLength;
+	unsigned int numfills;
+	unsigned int numcopies;
 	unsigned int writeoffset;
 	unsigned int writelength;
 
@@ -679,29 +821,33 @@ void VideoConverterEngine::SimulateRealResult(unsigned int updateplanes, unsigne
 		if (!(updateplanes & (0x1 << i))) continue;
 		datareadptr = (unsigned short*)processedPlaneData[i];
 		totalLength = planelengths[i];
-		for (int j = 0; j < totalLength; j++)
+		numfills = *datareadptr;
+		datareadptr++;
+		for (int j = 0; j < numfills; j++)
 		{
 			writeoffset = *datareadptr;
 			datareadptr++;
 			writelength = *datareadptr;
 			datareadptr++;
-			datawriteptr = (unsigned short*)(actualdisplayplanes[i] + (writeoffset & 0x7FFF));
-			if (writeoffset & 0x8000)
+			datawriteptr = (unsigned short*)(actualdisplayplanes[i] + writeoffset);
+			for (int k = 0; k < writelength; k++)
 			{
-				for (int k = 0; k < writelength; k++)
-				{
-					*datawriteptr++ = *datareadptr;
-				}
-				datareadptr++;
-				j += 2;
+				*datawriteptr++ = *datareadptr;
 			}
-			else
+			datareadptr++;
+		}
+		numcopies = *datareadptr;
+		datareadptr++;
+		for (int j = 0; j < numcopies; j++)
+		{
+			writeoffset = *datareadptr;
+			datareadptr++;
+			writelength = *datareadptr;
+			datareadptr++;
+			datawriteptr = (unsigned short*)(actualdisplayplanes[i] + writeoffset);
+			for (int k = 0; k < writelength; k++)
 			{
-				for (int k = 0; k < writelength; k++)
-				{
-					*datawriteptr++ = *datareadptr++;
-				}
-				j += writelength + 2;
+				*datawriteptr++ = *datareadptr++;
 			}
 		}
 	}
