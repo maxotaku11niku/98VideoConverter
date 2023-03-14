@@ -53,6 +53,8 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    FormProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    SwitchboardProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    PaletteEditProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 BOOL CALLBACK       resizeForm(HWND hwndChild, LPARAM lParam);
 BOOL CALLBACK       FindSlider(HWND hWnd, LPARAM lParam);
@@ -320,11 +322,11 @@ void TryOpenFile(HWND hWnd) //Just look at how many safety checks there are!
                                                 SendDlgItemMessageW(workForm, IDC_SEEKBAR, TBM_SETPOS, TRUE, 0);
                                                 curframepos = 0;
                                                 Static_SetText(seekframetext, L"0\0");
-                                                SetDlgItemInt(workForm, IDC_BITRATEEDIT, 2500, FALSE);
-                                                SetDlgItemInt(workForm, IDC_DITHERFACEDIT, 500, FALSE);
-                                                SetDlgItemInt(workForm, IDC_SATDITHERFACEDIT, 0, FALSE);
-                                                SetDlgItemInt(workForm, IDC_HUEDITHERFACEDIT, 1000, FALSE);
-                                                SetDlgItemInt(workForm, IDC_UVBEDIT, 1000, FALSE);
+                                                SetDlgItemInt(workForm, IDC_BITRATEEDIT, conv->GetBitrate()*2, FALSE);
+                                                SetDlgItemInt(workForm, IDC_DITHERFACEDIT, (UINT)(conv->GetDitherFactor()*1000.0f), FALSE);
+                                                SetDlgItemInt(workForm, IDC_SATDITHERFACEDIT, (UINT)(conv->GetSaturationDitherFactor() * 1000.0f), FALSE);
+                                                SetDlgItemInt(workForm, IDC_HUEDITHERFACEDIT, (UINT)(conv->GetHueDitherFactor() * 1000.0f), FALSE);
+                                                SetDlgItemInt(workForm, IDC_UVBEDIT, (UINT)(conv->GetUVBias() * 1000.0f), FALSE);
                                             }
                                             outItem->Release();
                                         }
@@ -439,6 +441,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_EXIT:
                 DestroyWindow(hWnd);
                 break;
+            case ID_EDIT_SWITCHSETTINGS:
+                DialogBox(hInst, MAKEINTRESOURCE(IDD_SWITCHBOARD), hWnd, SwitchboardProc);
+                break;
+            case ID_EDIT_PALETTE:
+                DialogBox(hInst, MAKEINTRESOURCE(IDD_PALETTE), hWnd, PaletteEditProc);
+                break;
             default:
                 return DefWindowProc(hWnd, message, wParam, lParam);
             }
@@ -494,7 +502,6 @@ bool ProgressReport(UINT32 frame)
 
 LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    UNREFERENCED_PARAMETER(wParam);
     UNREFERENCED_PARAMETER(lParam);
     std::wstring widetext;
     int newframepos;
@@ -531,7 +538,7 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 if (conv != nullptr)
                 {
-                    conv->SetBitrate(GetDlgItemInt(hWnd, IDC_BITRATEEDIT, NULL, FALSE));
+                    conv->SetBitrate(GetDlgItemInt(hWnd, IDC_BITRATEEDIT, NULL, FALSE)/2);
                 }
             }
             break;
@@ -575,6 +582,79 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
             }
             break;
+        }
+        break;
+    }
+    return (INT_PTR)FALSE;
+}
+
+int samplerateradios[] = { IDC_SAMPLERATE_RADIO_0, IDC_SAMPLERATE_RADIO_1, IDC_SAMPLERATE_RADIO_2, IDC_SAMPLERATE_RADIO_3,
+                           IDC_SAMPLERATE_RADIO_4, IDC_SAMPLERATE_RADIO_5, IDC_SAMPLERATE_RADIO_6, IDC_SAMPLERATE_RADIO_7 };
+
+LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    UNREFERENCED_PARAMETER(lParam);
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        if (conv != nullptr)
+        {
+            CheckRadioButton(hWnd, IDC_SAMPLERATE_RADIO_0, IDC_SAMPLERATE_RADIO_7, samplerateradios[conv->GetSampleRateSpec()]);
+            CheckRadioButton(hWnd, IDC_RESOLUTION_RADIO_0, IDC_RESOLUTION_RADIO_1, conv->GetIsHalfVerticalResolution() ? IDC_RESOLUTION_RADIO_1 : IDC_RESOLUTION_RADIO_0);
+        }
+        return (INT_PTR)TRUE;
+    case WM_COMMAND:
+        int wmId = LOWORD(wParam);
+        switch (wmId)
+        {
+        case IDCANCEL:
+            if (conv != nullptr)
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    if (IsDlgButtonChecked(hWnd, samplerateradios[i]))
+                    {
+                        conv->SetSampleRateSpec(i);
+                    }
+                }
+                if (IsDlgButtonChecked(hWnd, IDC_RESOLUTION_RADIO_0))
+                {
+                    conv->SetIsHalfVerticalResolution(false);
+                }
+                else if (IsDlgButtonChecked(hWnd, IDC_RESOLUTION_RADIO_1))
+                {
+                    conv->SetIsHalfVerticalResolution(true);
+                }
+            }
+            repaintPreview = true;
+            EndDialog(hWnd, LOWORD(wParam));
+            InvalidateRect(workForm, NULL, TRUE);
+            UpdateWindow(workForm);
+            return (INT_PTR)TRUE;
+        }
+        break;
+    }
+    return (INT_PTR)FALSE;
+}
+
+LRESULT CALLBACK PaletteEditProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    UNREFERENCED_PARAMETER(lParam);
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        return (INT_PTR)TRUE;
+    case WM_COMMAND:
+        int wmId = LOWORD(wParam);
+        switch (wmId)
+        {
+        case IDOK:
+            repaintPreview = true;
+            EndDialog(hWnd, LOWORD(wParam));
+            return (INT_PTR)TRUE;
+        case IDCANCEL:
+            EndDialog(hWnd, LOWORD(wParam));
+            return (INT_PTR)TRUE;
         }
         break;
     }

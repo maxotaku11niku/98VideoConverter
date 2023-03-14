@@ -69,11 +69,20 @@ public:
 	inline int GetOrigFrameNumber() { return innumFrames; };
 	inline unsigned char* GetConvertedImageData() { return convertedFrame; };
 	inline unsigned char* GetSimulatedOutput() { return actualdisplaybuffer; };
-	inline void SetBitrate(int wpp) { maxwordsperplane = wpp; };
+	inline int GetBitrate() { return maxwordsperframe; };
+	inline float GetDitherFactor() { return ditherfactor; };
+	inline float GetSaturationDitherFactor() { return satditherfactor; };
+	inline float GetHueDitherFactor() { return hueditherfactor; };
+	inline float GetUVBias() { return uvbias; };
+	inline int GetSampleRateSpec() { return sampleratespec; };
+	inline bool GetIsHalfVerticalResolution() { return isHalfVerticalResolution; };
+	inline void SetBitrate(int wpf) { maxwordsperframe = wpf; };
 	inline void SetDitherFactor(float ditfac) { ditherfactor = ditfac; };
 	inline void SetSaturationDitherFactor(float ditfac) { satditherfactor = ditfac; };
 	inline void SetHueDitherFactor(float ditfac) { hueditherfactor = ditfac; };
 	inline void SetUVBias(float uvb) { uvbias = uvb; };
+	inline void SetSampleRateSpec(int spec) { sampleratespec = spec; };
+	inline void SetIsHalfVerticalResolution(bool hvr) { isHalfVerticalResolution = hvr; };
 private:
 	inline unsigned int GetClosestColour(unsigned int argbcolour)
 	{
@@ -351,6 +360,7 @@ private:
 	enum AVHWDeviceType hwtype;
 	bool hardwareaccel;
 	SwsContext* scalercontext;
+	SwsContext* scalercontexthalfheight;
 	SwrContext* resamplercontext;
 	AVStream* vidstream;
 	AVStream* audstream;
@@ -415,16 +425,16 @@ private:
 	unsigned int colind[640 * 400];
 	unsigned int** matchesoffset;
 	unsigned int** matcheslength;
-	unsigned int** matchesimpact;
+	int** matchesimpact;
 	bool** ismatchafill;
 	unsigned int foundfills[8192];
 	unsigned int foundcopies[8192];
-	unsigned int impactarray[PC_98_ONEPLANE_WORD];
+	int impactarray[PC_98_ONEPLANE_WORD];
 	bool isalreadydesignatedfill[PC_98_ONEPLANE_WORD];
 	int minKeepLength;
 	int minimpactperword;
 	int minimpactperrun;
-	int maxwordsperplane;
+	int maxwordsperframe;
 	float ditherfactor;
 	float satditherfactor;
 	float hueditherfactor;

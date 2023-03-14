@@ -15,6 +15,8 @@
 #define IDD_MY98VIDEOCONVERTER          109
 #define IDD_FORMVIEW                    110
 #define IDR_MAINFRAME                   128
+#define IDD_SWITCHBOARD                 130
+#define IDD_PALETTE                     131
 #define IDC_PREVIEWIMAGE                1001
 #define IDC_SETTINGS                    1002
 #define IDC_SEEKBAR                     1004
@@ -27,13 +29,26 @@
 #define IDC_SATDITHERFACLABEL           1013
 #define IDC_SATDITHERFACEDIT            1014
 #define IDC_HUEDITHERFACLABEL           1015
-#define IDC_EDIT2                       1016
 #define IDC_HUEDITHERFACEDIT            1016
+#define IDC_SAMPLERATE_RADIO_0          1018
+#define IDC_SAMPLERATE_GROUP            1019
+#define IDC_SAMPLERATE_RADIO_1          1020
+#define IDC_SAMPLERATE_RADIO_2          1021
+#define IDC_SAMPLERATE_RADIO_3          1022
+#define IDC_SAMPLERATE_RADIO_4          1023
+#define IDC_SAMPLERATE_RADIO_5          1024
+#define IDC_SAMPLERATE_RADIO_6          1025
+#define IDC_SAMPLERATE_RADIO_7          1026
+#define IDC_RESOLUTION_GROUP            1027
+#define IDC_RESOLUTION_RADIO_0          1028
+#define IDC_RESOLUTION_RADIO_1          1029
 #define ID_FILE_EXIT                    32771
 #define ID_FILE_QUIT                    32772
 #define IDM_OPENFILE                    32773
 #define ID_EXPORTFILE                   32774
 #define IDM_EXPORTFILE                  32775
+#define ID_EDIT_SWITCHSETTINGS          32780
+#define ID_EDIT_PALETTE                 32781
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -41,9 +56,9 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        130
-#define _APS_NEXT_COMMAND_VALUE         32780
-#define _APS_NEXT_CONTROL_VALUE         1017
+#define _APS_NEXT_RESOURCE_VALUE        132
+#define _APS_NEXT_COMMAND_VALUE         32782
+#define _APS_NEXT_CONTROL_VALUE         1030
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

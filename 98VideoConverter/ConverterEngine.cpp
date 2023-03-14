@@ -101,6 +101,23 @@ const unsigned int bwpalette[16] = { 0xFF000000, //This palette is just pure bla
 									 0xFF000000,
 									 0xFFFFFFFF };
 
+const unsigned int lumchrompalette[16] = { 0xFF002200, //This palette cleanly separates luma and chroma
+                                           0xFF557700,
+										   0xFFAACC11, 
+										   0xFFFFFF66,
+										   0xFF004400, 
+										   0xFF009955, 
+										   0xFF22EEAA, 
+										   0xFF77FFFF,
+										   0xFF000099,
+										   0xFF5533EE,
+										   0xFFAA88FF,
+										   0xFFFFDDFF, 
+										   0xFF880000,
+										   0xFFDD1155,
+										   0xFFFF66AA,
+										   0xFFFFBBFF };
+
 VideoConverterEngine::VideoConverterEngine()
 {
 	alreadyOpen = false;
@@ -120,13 +137,14 @@ VideoConverterEngine::VideoConverterEngine()
 	ditherfactor = 0.5f;
 	satditherfactor = 0.0f;
 	hueditherfactor = 1.0f;
+	sampleratespec = GetSampleRateSpec(22050.0f);
 	planedata = new unsigned char*[4];
 	prevplanedata = new unsigned char*[4];
 	processedPlaneData = new unsigned short*[4];
 	actualdisplayplanes = new unsigned char*[4];
 	matchesoffset = new unsigned int*[4];
 	matcheslength = new unsigned int*[4];
-	matchesimpact = new unsigned int*[4];
+	matchesimpact = new int*[4];
 	ismatchafill = new bool*[4];
 	for (int i = 0; i < 4; i++)
 	{
@@ -136,16 +154,16 @@ VideoConverterEngine::VideoConverterEngine()
 		processedPlaneData[i] = new unsigned short[65536];
 		matchesoffset[i] = new unsigned int[8192];
 		matcheslength[i] = new unsigned int[8192];
-		matchesimpact[i] = new unsigned int[8192];
+		matchesimpact[i] = new int[8192];
 		ismatchafill[i] = new bool[8192];
 		memset(planedata[i], 0x00000000, PC_98_ONEPLANE_BYTE); //The screen will be clear when we start up the player
 		memset(prevplanedata[i], 0x00000000, PC_98_ONEPLANE_BYTE);
 		memset(actualdisplayplanes[i], 0x00000000, PC_98_ONEPLANE_BYTE);
 	}
 	minKeepLength = 2; //Legacy parameters
-	minimpactperword = 0;
+	minimpactperword = 1;
 	minimpactperrun = 0;
-	maxwordsperplane = 2500; //This quality paramter is preferred to the other ones
+	maxwordsperframe = 10000; //This quality parameter is preferred to the other ones
 	frameskip = 0;
 	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S16;
 	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 1, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Force to mono
@@ -171,7 +189,6 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 	actualFramerate = PC_98_FRAMERATE / ((double)(frameskip + 1));
 	actualFrametime = ((double)(frameskip + 1)) / PC_98_FRAMERATE;
 	convnumFrames = (int)(totalTime/actualFrametime); //Get the actual number of frames we need to write
-	sampleratespec = GetSampleRateSpec(22050.0f);
 	realoutsamplerate = GetRealSampleRateFromSpec(sampleratespec); //Sample rate must be one of the options that the PC-9801-86 supports
 	CreateFullAudioStream();
 	av_seek_frame(fmtcontext, vidstreamIndex, 0, 0);
@@ -223,8 +240,19 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		curFrame = curHWFrame;
 	}
 	//*/
+	int tly = topLeftY;
+	int outh = outHeight;
 	av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
-	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+	{
+		sws_scale(scalercontexthalfheight, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+		tly /= 2;
+		outh /= 2;
+	}
+	else
+	{
+		sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	}
 	for (int i = 0; i < convnumFrames; i++)
 	{
 		memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
@@ -237,8 +265,8 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 
 		//Convert it for display
 		unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
-		unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * topLeftY); //Cheeky reinterpretation
-		for (int i = 0; i < outHeight; i++)
+		unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+		for (int i = 0; i < outh; i++)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
@@ -296,7 +324,14 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 			if (curFrame->data[0] != nullptr)
 			{
 				av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
-				sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+				if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+				{
+					sws_scale(scalercontexthalfheight, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+				}
+				else
+				{
+					sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+				}
 			}
 		}
 	}
@@ -456,9 +491,25 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 			impactarray[j] = GetNumChangedBits(*framedatptr++, *prevframedatptr++);
 			if (impactarray[j] < minimpactperword) //Prune low-impact words
 			{
-				impactarray[j] = 0;
+				impactarray[j] = -1; //-1 -> no impact, do not include
 			}
 			isalreadydesignatedfill[j] = false;
+		}
+
+		for (int j = 1; j < PC_98_ONEPLANE_WORD - 1; j++) //Detect deltas that are close to each other
+		{
+			if ((impactarray[j] < 0) && (impactarray[j - 1] > 0))
+			{
+				if (impactarray[j + 1] > 0) //distance is 1 word -> saves memory and processing time
+				{
+					impactarray[j] = 0; // 0 -> no impact, but it is so close to other potential deltas that it would be better to include anyway
+				}
+				else if ((j < PC_98_ONEPLANE_WORD - 2) && (impactarray[j + 2] > 0)) //distance is 2 words -> saves processing time
+				{
+					impactarray[j] = 0;
+					impactarray[j + 1] = 0;
+				}
+			}
 		}
 
 		framedatptr = (unsigned short*)planedata[i];
@@ -472,15 +523,19 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 				curmatchoffset = j;
 				curmatchlength = 0;
 				curmatchimpact = 0;
-				while (impactarray[j] != 0 && *framedatptr == fillcomp)
+				while (impactarray[j] >= 0 && *framedatptr == fillcomp)
 				{
+					if (impactarray[j] == 0 && *(framedatptr + 1) != fillcomp) //if we hit a zero impact word that's close to another delta, check if it's compatible
+					{
+						break;
+					}
 					curmatchimpact += impactarray[j];
 					curmatchlength++;
 					framedatptr++;
 					prevframedatptr++;
 					j++;
 				}
-				if (curmatchlength >= 4) //Short fills are pretty useless
+				if (curmatchlength >= 2) //Short fills are pretty useless
 				{
 					matchesoffset[i][nummatches[i]] = curmatchoffset << 1;
 					matcheslength[i][nummatches[i]] = curmatchlength;
@@ -508,8 +563,12 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 				curmatchoffset = j;
 				curmatchlength = 0;
 				curmatchimpact = 0;
-				while (impactarray[j] != 0 && !isalreadydesignatedfill[j])
+				while (impactarray[j] >= 0 && !isalreadydesignatedfill[j])
 				{
+					if (impactarray[j] == 0 && isalreadydesignatedfill[j + 1]) //if we hit a zero impact word that's close to another delta, check if it's compatible
+					{
+						break;
+					}
 					curmatchimpact += impactarray[j];
 					curmatchlength++;
 					framedatptr++;
@@ -665,13 +724,13 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 	{
 		for (int i = 0; i < 4; i++)
 		{
-			maxwordsfixed[i] = maxwordsperplane;
+			maxwordsfixed[i] = maxwordsperframe/4;
 			planeorder[i] = i;
 		}
 	}
 	else
 	{
-		unsigned int totalframedata = maxwordsperplane * 4;
+		unsigned int totalframedata = maxwordsperframe;
 		double wordsperimpact = ((double)totalframedata) / ((double)totalmaximpact);
 		for (int i = 0; i < 4; i++)
 		{
@@ -857,26 +916,55 @@ void VideoConverterEngine::SimulateRealResult(unsigned int updateplanes, unsigne
 	int indcomp = 0;
 	int index = 0;
 	finalwriteptr = (unsigned int*)actualdisplaybuffer;
-	for (int i = 0; i < PC_98_RESOLUTION; i++) //Convert from planar data to colour
+	if (isHalfVerticalResolution)
 	{
-		planeind = i / 8;
-		planeshift = 7 - (i & 0x7);
-		index = actualdisplayplanes[0][planeind] & (0x1 << planeshift);
-		index <<= 8;
-		index >>= planeshift + 8;
-		indcomp = actualdisplayplanes[1][planeind] & (0x1 << planeshift);
-		indcomp <<= 8;
-		indcomp >>= planeshift + 7;
-		index |= indcomp;
-		indcomp = actualdisplayplanes[2][planeind] & (0x1 << planeshift);
-		indcomp <<= 8;
-		indcomp >>= planeshift + 6;
-		index |= indcomp;
-		indcomp = actualdisplayplanes[3][planeind] & (0x1 << planeshift);
-		indcomp <<= 8;
-		indcomp >>= planeshift + 5;
-		index |= indcomp;
-		*finalwriteptr++ = palette[index];
+		for (int i = 0; i < PC_98_RESOLUTION; i++) //Convert from planar data to colour
+		{
+			planeind = i / 8;
+			planeind %= PC_98_BLOCKWIDTH;
+			planeind += PC_98_BLOCKWIDTH * (i / 1280);
+			planeshift = 7 - (i & 0x7);
+			index = actualdisplayplanes[0][planeind] & (0x1 << planeshift);
+			index <<= 8;
+			index >>= planeshift + 8;
+			indcomp = actualdisplayplanes[1][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 7;
+			index |= indcomp;
+			indcomp = actualdisplayplanes[2][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 6;
+			index |= indcomp;
+			indcomp = actualdisplayplanes[3][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 5;
+			index |= indcomp;
+			*finalwriteptr++ = palette[index];
+		}
+	}
+	else
+	{
+		for (int i = 0; i < PC_98_RESOLUTION; i++) //Convert from planar data to colour
+		{
+			planeind = i / 8;
+			planeshift = 7 - (i & 0x7);
+			index = actualdisplayplanes[0][planeind] & (0x1 << planeshift);
+			index <<= 8;
+			index >>= planeshift + 8;
+			indcomp = actualdisplayplanes[1][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 7;
+			index |= indcomp;
+			indcomp = actualdisplayplanes[2][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 6;
+			index |= indcomp;
+			indcomp = actualdisplayplanes[3][planeind] & (0x1 << planeshift);
+			indcomp <<= 8;
+			indcomp >>= planeshift + 5;
+			index |= indcomp;
+			*finalwriteptr++ = palette[index];
+		}
 	}
 }
 
@@ -936,22 +1024,49 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		curFrame = curHWFrame;
 	}
 	//*/
+	int tly = topLeftY;
+	int outh = outHeight;
 	av_image_copy(vidorigData, vidorigLineSize, (const unsigned char**)curFrame->data, curFrame->linesize, inPixFormat, inWidth, inHeight);
-	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+	{
+		sws_scale(scalercontexthalfheight, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+		outh /= 2;
+	}
+	else
+	{
+		sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
+	}
 	memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
 
 	//Convert it for display
 	unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
-	unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * topLeftY); //Cheeky reinterpretation
-	for (int i = 0; i < outHeight; i++)
+	unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+	unsigned int* outframeColLineDouble = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + 1));
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
 	{
-		for (int j = 0; j < outWidth; j++)
+		for (int i = 0; i < outh; i++)
 		{
-			*outframeCol++ = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+				*outframeColLineDouble++ = *outframeCol++;
+			}
+			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
+			outframeColLineDouble = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 3));
 		}
-		outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (topLeftY + i + 1));
 	}
-
+	else
+	{
+		for (int i = 0; i < outh; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol++ = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+			}
+			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
+		}
+	}
+	
 	av_packet_unref(curPacket);
 
 	return convertedFrame;
@@ -1065,6 +1180,7 @@ void VideoConverterEngine::OpenForDecodeVideo(wchar_t* inFileName)
 		topLeftY = 0;
 	}
 	scalercontext = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
+	scalercontexthalfheight = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight/2, AVPixelFormat::AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
 	vidscaleBufsize = av_image_alloc(vidscaleData, vidscaleLineSize, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, 1);
 	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
 	alreadyOpen = true;
@@ -1076,6 +1192,7 @@ void VideoConverterEngine::OpenForDecodeVideo(wchar_t* inFileName)
 void VideoConverterEngine::CloseDecoder()
 {
 	sws_freeContext(scalercontext);
+	sws_freeContext(scalercontexthalfheight);
 	avcodec_free_context(&vidcodcontext);
 	avcodec_free_context(&audcodcontext);
 	avformat_close_input(&fmtcontext);
