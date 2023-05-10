@@ -57,6 +57,14 @@ constexpr float RGBtoYUV[9] = {    0.299f,    0.587f,    0.114f,
 								-0.14713f, -0.28886f,    0.436f,
 								   0.615f, -0.51499f, -0.10001f };
 
+constexpr float YIQtoRGB[9] = { 1.0f,  0.955942f,  0.620796f,
+								1.0f, -0.271990f, -0.647199f,
+								1.0f, -1.106766f,  1.704271f };
+
+constexpr float RGBtoYIQ[9] = { 0.299f,     0.587f,      0.114f,
+							    0.595915f, -0.274583f,  -0.321338f,
+							    0.211559f, -0.522742f,   0.311191f };
+
 class VideoConverterEngine
 {
 public:
@@ -69,20 +77,25 @@ public:
 	inline int GetOrigFrameNumber() { return innumFrames; };
 	inline unsigned char* GetConvertedImageData() { return convertedFrame; };
 	inline unsigned char* GetSimulatedOutput() { return actualdisplaybuffer; };
+	inline unsigned char* GetRescaledInputFrame() { return inputrescaledframe; };
 	inline int GetBitrate() { return maxwordsperframe; };
 	inline float GetDitherFactor() { return ditherfactor; };
 	inline float GetSaturationDitherFactor() { return satditherfactor; };
 	inline float GetHueDitherFactor() { return hueditherfactor; };
 	inline float GetUVBias() { return uvbias; };
+	inline float GetIBias() { return ibias; };
 	inline int GetSampleRateSpec() { return sampleratespec; };
 	inline bool GetIsHalfVerticalResolution() { return isHalfVerticalResolution; };
+	inline int GetFrameSkip() { return frameskip; };
 	inline void SetBitrate(int wpf) { maxwordsperframe = wpf; };
 	inline void SetDitherFactor(float ditfac) { ditherfactor = ditfac; };
 	inline void SetSaturationDitherFactor(float ditfac) { satditherfactor = ditfac; };
 	inline void SetHueDitherFactor(float ditfac) { hueditherfactor = ditfac; };
 	inline void SetUVBias(float uvb) { uvbias = uvb; };
+	inline void SetIBias(float ib) { ibias = ib; };
 	inline void SetSampleRateSpec(int spec) { sampleratespec = spec; };
 	inline void SetIsHalfVerticalResolution(bool hvr) { isHalfVerticalResolution = hvr; };
+	inline void SetFrameSkip(int fskip) { frameskip = fskip; };
 private:
 	inline unsigned int GetClosestColour(unsigned int argbcolour)
 	{
@@ -159,6 +172,29 @@ private:
 			{
 				lowestDistance = curDistance;
 				setIndex = i;
+			}
+		}
+		return palette[setIndex];
+	}
+
+	inline unsigned int GetClosestYIQColour(float y, float i, float q)
+	{
+		float lowestDistance = 999999.0f; //No way it would be higher anyway
+		float curDistance = 0.0f; //Actually some sort of weird metric
+		int setIndex = 0;
+		float ydif = 0.0f;
+		float idif = 0.0f;
+		float qdif = 0.0f;
+		for (int j = 0; j < 16; j++)
+		{
+			ydif = fabsf((y - yiqpal[j][0]) * uvbias);
+			idif = i - yiqpal[j][1];
+			qdif = (q - yiqpal[j][2]) * ibias;
+			curDistance = ydif + sqrtf(idif * idif + qdif * qdif);
+			if (curDistance < lowestDistance)
+			{
+				lowestDistance = curDistance;
+				setIndex = j;
 			}
 		}
 		return palette[setIndex];
@@ -270,6 +306,26 @@ private:
 		u = sat * cosf(hue);
 		v = sat * sinf(hue);
 		return GetClosestYUVColourAccel(cy, u, v);
+	}
+
+	inline unsigned int OrderedDither8x8WithYIQ(unsigned int argbcolour, unsigned int x, unsigned int y)
+	{
+		float floatcol[4];
+		floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
+		floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
+		floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
+		floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
+		float cy = RGBtoYIQ[0] * floatcol[1] + RGBtoYIQ[1] * floatcol[2] + RGBtoYIQ[2] * floatcol[3]; //Y
+		float i = RGBtoYIQ[3] * floatcol[1] + RGBtoYIQ[4] * floatcol[2] + RGBtoYIQ[5] * floatcol[3]; //I
+		float q = RGBtoYIQ[6] * floatcol[1] + RGBtoYIQ[7] * floatcol[2] + RGBtoYIQ[8] * floatcol[3]; //Q
+		float sat = sqrtf(i * i + q * q);
+		float hue = atan2f(i, q);
+		cy += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
+		sat -= satditherfactor * odithermatrix8[((x - 3) & 0x07) + 8 * ((y - 7) & 0x07)];
+		hue += hueditherfactor * odithermatrix8[((x + 2) & 0x07) + 8 * ((y - 5) & 0x07)];
+		q = sat * cosf(hue);
+		i = sat * sinf(hue);
+		return GetClosestYIQColour(cy, i, q);
 	}
 
 	inline void RegenerateColourMap()
@@ -392,6 +448,7 @@ private:
 	int curtotalByteStreamSize;
 	bool isForcedBuzzerAudio;
 	bool isHalfVerticalResolution;
+	unsigned char inputrescaledframe[PC_98_RESOLUTION * 4];
 
 	unsigned char* vidorigData[4];
 	int vidorigLineSize[4];
@@ -421,7 +478,9 @@ private:
 	unsigned int nearestcolours[0x01000000];
 	float floatpal[16][4];
 	float yuvpal[16][3];
+	float yiqpal[16][3];
 	float uvbias;
+	float ibias;
 	unsigned int colind[640 * 400];
 	unsigned int** matchesoffset;
 	unsigned int** matcheslength;

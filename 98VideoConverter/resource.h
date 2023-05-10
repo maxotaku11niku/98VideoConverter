@@ -42,6 +42,14 @@
 #define IDC_RESOLUTION_GROUP            1027
 #define IDC_RESOLUTION_RADIO_0          1028
 #define IDC_RESOLUTION_RADIO_1          1029
+#define IDC_INPUTIMAGE                  1030
+#define IDC_IBIASLABEL                  1031
+#define IDC_IBIASEDIT                   1032
+#define IDC_FRAMERATE_GROUP             1033
+#define IDC_FRAMERATE_RADIO_0           1034
+#define IDC_FRAMERATE_RADIO_1           1035
+#define IDC_FRAMERATE_RADIO_2           1036
+#define IDC_FRAMERATE_RADIO_3           1037
 #define ID_FILE_EXIT                    32771
 #define ID_FILE_QUIT                    32772
 #define IDM_OPENFILE                    32773
@@ -58,7 +66,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        132
 #define _APS_NEXT_COMMAND_VALUE         32782
-#define _APS_NEXT_CONTROL_VALUE         1030
+#define _APS_NEXT_CONTROL_VALUE         1035
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

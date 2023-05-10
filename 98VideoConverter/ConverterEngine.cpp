@@ -131,8 +131,12 @@ VideoConverterEngine::VideoConverterEngine()
 		yuvpal[i][0] = RGBtoYUV[0] * floatpal[i][1] + RGBtoYUV[1] * floatpal[i][2] + RGBtoYUV[2] * floatpal[i][3]; //Y
 		yuvpal[i][1] = RGBtoYUV[3] * floatpal[i][1] + RGBtoYUV[4] * floatpal[i][2] + RGBtoYUV[5] * floatpal[i][3]; //U
 		yuvpal[i][2] = RGBtoYUV[6] * floatpal[i][1] + RGBtoYUV[7] * floatpal[i][2] + RGBtoYUV[8] * floatpal[i][3]; //V
+		yiqpal[i][0] = RGBtoYIQ[0] * floatpal[i][1] + RGBtoYIQ[1] * floatpal[i][2] + RGBtoYIQ[2] * floatpal[i][3]; //Y
+		yiqpal[i][1] = RGBtoYIQ[3] * floatpal[i][1] + RGBtoYIQ[4] * floatpal[i][2] + RGBtoYIQ[5] * floatpal[i][3]; //I
+		yiqpal[i][2] = RGBtoYIQ[6] * floatpal[i][1] + RGBtoYIQ[7] * floatpal[i][2] + RGBtoYIQ[8] * floatpal[i][3]; //Q
 	}
 	uvbias = 1.0f;
+	ibias = 1.0f;
 	RegenerateColourMap();
 	ditherfactor = 0.5f;
 	satditherfactor = 0.0f;
@@ -256,6 +260,35 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 	for (int i = 0; i < convnumFrames; i++)
 	{
 		memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
+		memset(inputrescaledframe, 0, PC_98_RESOLUTION * 4);
+
+		unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
+		unsigned int* outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+		unsigned int* outframeColLineDouble = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + 1));
+		if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+		{
+			for (int i = 0; i < outh; i++)
+			{
+				for (int j = 0; j < outWidth; j++)
+				{
+					*outframeCol = *inframeCol++;
+					*outframeColLineDouble++ = *outframeCol++;
+				}
+				outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
+				outframeColLineDouble = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 3));
+			}
+		}
+		else
+		{
+			for (int i = 0; i < outh; i++)
+			{
+				for (int j = 0; j < outWidth; j++)
+				{
+					*outframeCol++ = *inframeCol++;
+				}
+				outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
+			}
+		}
 
 		planesToWrite = 0;
 		curFrameLength[0] = 0;
@@ -264,13 +297,13 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		curFrameLength[3] = 0;
 
 		//Convert it for display
-		unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
-		unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+		inframeCol = (unsigned int*)vidscaleData[0];
+		outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
 		for (int i = 0; i < outh; i++)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYUV(inframeCol[j + i * outWidth], i, j);
+				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYIQ(inframeCol[j + i * outWidth], i, j);
 			}
 		}
 
@@ -1037,6 +1070,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
 	}
 	memset(convertedFrame, palette[0], PC_98_RESOLUTION * 4);
+	memset(inputrescaledframe, 0, PC_98_RESOLUTION * 4);
 
 	//Convert it for display
 	unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
@@ -1048,7 +1082,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+				*outframeCol = OrderedDither8x8WithYIQ(*inframeCol++, i, j);
 				*outframeColLineDouble++ = *outframeCol++;
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
@@ -1061,9 +1095,38 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol++ = OrderedDither8x8WithYUV(*inframeCol++, i, j);
+				*outframeCol++ = OrderedDither8x8WithYIQ(*inframeCol++, i, j);
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
+		}
+	}
+
+	//Get the rescaled input frame out for comparison
+	inframeCol = (unsigned int*)vidscaleData[0];
+	outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+	outframeColLineDouble = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + 1));
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+	{
+		for (int i = 0; i < outh; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol = *inframeCol++;
+				*outframeColLineDouble++ = *outframeCol++;
+			}
+			outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
+			outframeColLineDouble = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 3));
+		}
+	}
+	else
+	{
+		for (int i = 0; i < outh; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol++ = *inframeCol++;
+			}
+			outframeCol = ((unsigned int*)inputrescaledframe) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
 		}
 	}
 	

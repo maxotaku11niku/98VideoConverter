@@ -39,8 +39,10 @@ const BITMAPINFOHEADER stddisplaybmpinfo = { 640 * 400 * 3,
                                     0};
 RGBQUAD colourtable[1] = { {0,0,0,0} };
 int curframepos = 0;
-Gdiplus::Bitmap* bmp;
-HBITMAP obmp;
+Gdiplus::Bitmap* inputbmp;
+Gdiplus::Bitmap* previewbmp;
+HBITMAP oinputbmp;
+HBITMAP opreviewbmp;
 Gdiplus::Rect scrrect = Gdiplus::Rect(0, 0, 640, 400);
 HWND seekframetext;
 std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>* strconv = new std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>, wchar_t>();
@@ -314,10 +316,14 @@ void TryOpenFile(HWND hWnd) //Just look at how many safety checks there are!
                                             if (SUCCEEDED(hr))
                                             {
                                                 conv->OpenForDecodeVideo(filePath);
-                                                bmp = new Gdiplus::Bitmap(640, 400, 640 * 4, PixelFormat32bppRGB, conv->GrabFrame(0));
-                                                obmp = NULL;
-                                                bmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &obmp);
-                                                SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)obmp);
+                                                previewbmp = new Gdiplus::Bitmap(640, 400, 640 * 4, PixelFormat32bppRGB, conv->GrabFrame(0));
+                                                inputbmp = new Gdiplus::Bitmap(640, 400, 640 * 4, PixelFormat32bppRGB, conv->GetRescaledInputFrame());
+                                                oinputbmp = NULL;
+                                                opreviewbmp = NULL;
+                                                inputbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &oinputbmp);
+                                                previewbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &opreviewbmp);
+                                                SendDlgItemMessageW(workForm, IDC_INPUTIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)oinputbmp);
+                                                SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)opreviewbmp);
                                                 SendDlgItemMessageW(workForm, IDC_SEEKBAR, TBM_SETRANGEMAX, TRUE, conv->GetOrigFrameNumber() - 1);
                                                 SendDlgItemMessageW(workForm, IDC_SEEKBAR, TBM_SETPOS, TRUE, 0);
                                                 curframepos = 0;
@@ -327,6 +333,7 @@ void TryOpenFile(HWND hWnd) //Just look at how many safety checks there are!
                                                 SetDlgItemInt(workForm, IDC_SATDITHERFACEDIT, (UINT)(conv->GetSaturationDitherFactor() * 1000.0f), FALSE);
                                                 SetDlgItemInt(workForm, IDC_HUEDITHERFACEDIT, (UINT)(conv->GetHueDitherFactor() * 1000.0f), FALSE);
                                                 SetDlgItemInt(workForm, IDC_UVBEDIT, (UINT)(conv->GetUVBias() * 1000.0f), FALSE);
+                                                SetDlgItemInt(workForm, IDC_IBIASEDIT, (UINT)(conv->GetIBias() * 1000.0f), FALSE);
                                             }
                                             outItem->Release();
                                         }
@@ -484,12 +491,18 @@ bool ProgressReport(UINT32 frame)
     widetext = strconv->from_bytes(numbertext);
     Static_SetText(seekframetext, widetext.c_str());
     curframepos = frame;
-    bmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, bmpdat);
+    previewbmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, bmpdat);
     memcpy(bmpdat->Scan0, conv->GetSimulatedOutput(), 640 * 400 * 4);
-    bmp->UnlockBits(bmpdat);
-    DeleteBitmap(obmp);
-    bmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &obmp);
-    SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)obmp);
+    previewbmp->UnlockBits(bmpdat);
+    DeleteBitmap(opreviewbmp);
+    previewbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &opreviewbmp);
+    inputbmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, bmpdat);
+    memcpy(bmpdat->Scan0, conv->GetRescaledInputFrame(), 640 * 400 * 4);
+    inputbmp->UnlockBits(bmpdat);
+    DeleteBitmap(oinputbmp);
+    inputbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &oinputbmp);
+    SendDlgItemMessageW(workForm, IDC_INPUTIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)oinputbmp);
+    SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)opreviewbmp);
     SendDlgItemMessageW(workForm, IDC_SEEKBAR, TBM_SETPOS, TRUE, frame);
     UpdateWindow(mainWindow);
     RedrawWindow(mainWindow, NULL, NULL, RDW_INTERNALPAINT);
@@ -518,12 +531,18 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             widetext = strconv->from_bytes(numbertext);
             Static_SetText(seekframetext, widetext.c_str());
             curframepos = newframepos;
-            bmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, &bmpdat);
+            previewbmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, &bmpdat);
             memcpy(bmpdat.Scan0, conv->GrabFrame(newframepos), 640 * 400 * 4);
-            bmp->UnlockBits(&bmpdat);
-            DeleteBitmap(obmp);
-            bmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &obmp);
-            SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)obmp);
+            previewbmp->UnlockBits(&bmpdat);
+            DeleteBitmap(opreviewbmp);
+            previewbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &opreviewbmp);
+            inputbmp->LockBits(&scrrect, Gdiplus::ImageLockMode::ImageLockModeWrite, PixelFormat32bppRGB, &bmpdat);
+            memcpy(bmpdat.Scan0, conv->GetRescaledInputFrame(), 640 * 400 * 4);
+            inputbmp->UnlockBits(&bmpdat);
+            DeleteBitmap(oinputbmp);
+            inputbmp->GetHBITMAP(Gdiplus::Color(0, 0, 0), &oinputbmp);
+            SendDlgItemMessageW(workForm, IDC_INPUTIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)oinputbmp);
+            SendDlgItemMessageW(workForm, IDC_PREVIEWIMAGE, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)opreviewbmp);
         }
         repaintPreview = false;
         break;
@@ -582,6 +601,16 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
             }
             break;
+        case IDC_IBIASEDIT:
+            if (HIWORD(wParam) == EN_CHANGE)
+            {
+                if (conv != nullptr)
+                {
+                    conv->SetIBias(((float)GetDlgItemInt(hWnd, IDC_IBIASEDIT, NULL, FALSE)) / 1000.0f);
+                    repaintPreview = true;
+                }
+            }
+            break;
         }
         break;
     }
@@ -590,6 +619,8 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 int samplerateradios[] = { IDC_SAMPLERATE_RADIO_0, IDC_SAMPLERATE_RADIO_1, IDC_SAMPLERATE_RADIO_2, IDC_SAMPLERATE_RADIO_3,
                            IDC_SAMPLERATE_RADIO_4, IDC_SAMPLERATE_RADIO_5, IDC_SAMPLERATE_RADIO_6, IDC_SAMPLERATE_RADIO_7 };
+
+int framerateradios[] = { IDC_FRAMERATE_RADIO_0, IDC_FRAMERATE_RADIO_1, IDC_FRAMERATE_RADIO_2, IDC_FRAMERATE_RADIO_3 };
 
 LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -601,6 +632,7 @@ LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         {
             CheckRadioButton(hWnd, IDC_SAMPLERATE_RADIO_0, IDC_SAMPLERATE_RADIO_7, samplerateradios[conv->GetSampleRateSpec()]);
             CheckRadioButton(hWnd, IDC_RESOLUTION_RADIO_0, IDC_RESOLUTION_RADIO_1, conv->GetIsHalfVerticalResolution() ? IDC_RESOLUTION_RADIO_1 : IDC_RESOLUTION_RADIO_0);
+            CheckRadioButton(hWnd, IDC_FRAMERATE_RADIO_0, IDC_FRAMERATE_RADIO_3, framerateradios[conv->GetFrameSkip()]);
         }
         return (INT_PTR)TRUE;
     case WM_COMMAND:
@@ -624,6 +656,13 @@ LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 else if (IsDlgButtonChecked(hWnd, IDC_RESOLUTION_RADIO_1))
                 {
                     conv->SetIsHalfVerticalResolution(true);
+                }
+                for (int i = 0; i < 3; i++)
+                {
+                    if (IsDlgButtonChecked(hWnd, framerateradios[i]))
+                    {
+                        conv->SetFrameSkip(i);
+                    }
                 }
             }
             repaintPreview = true;
