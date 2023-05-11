@@ -140,7 +140,7 @@ VideoConverterEngine::VideoConverterEngine()
 	RegenerateColourMap();
 	ditherfactor = 0.5f;
 	satditherfactor = 0.0f;
-	hueditherfactor = 1.0f;
+	hueditherfactor = 0.0f;
 	sampleratespec = GetSampleRateSpec(22050.0f);
 	planedata = new unsigned char*[4];
 	prevplanedata = new unsigned char*[4];
@@ -303,7 +303,7 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				outframeCol[j + i * PC_98_WIDTH] = OrderedDither8x8WithYIQ(inframeCol[j + i * outWidth], i, j);
+				outframeCol[j + i * PC_98_WIDTH] = VoidClusterDither16x16WithYIQ(inframeCol[j + i * outWidth], j, i);
 			}
 		}
 
@@ -1082,7 +1082,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol = OrderedDither8x8WithYIQ(*inframeCol++, i, j);
+				*outframeCol = VoidClusterDither16x16WithYIQ(*inframeCol++, j, i);
 				*outframeColLineDouble++ = *outframeCol++;
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
@@ -1095,7 +1095,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol++ = OrderedDither8x8WithYIQ(*inframeCol++, i, j);
+				*outframeCol++ = VoidClusterDither16x16WithYIQ(*inframeCol++, j, i);
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
 		}
