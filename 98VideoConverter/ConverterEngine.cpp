@@ -6,6 +6,7 @@
 #include "ConverterEngine.h"
 #include <string>
 #include <locale>
+#include <omp.h>
 extern "C"
 {
 	#include "include/libavutil/imgutils.h"
@@ -121,6 +122,7 @@ const unsigned int lumchrompalette[16] = { 0xFF002200, //This palette cleanly se
 VideoConverterEngine::VideoConverterEngine()
 {
 	alreadyOpen = false;
+	float ciex, ciey, ciez;
 	for (int i = 0; i < 16; i++)
 	{
 		palette[i] = basepalette[i];
@@ -134,13 +136,25 @@ VideoConverterEngine::VideoConverterEngine()
 		yiqpal[i][0] = RGBtoYIQ[0] * floatpal[i][1] + RGBtoYIQ[1] * floatpal[i][2] + RGBtoYIQ[2] * floatpal[i][3]; //Y
 		yiqpal[i][1] = RGBtoYIQ[3] * floatpal[i][1] + RGBtoYIQ[4] * floatpal[i][2] + RGBtoYIQ[5] * floatpal[i][3]; //I
 		yiqpal[i][2] = RGBtoYIQ[6] * floatpal[i][1] + RGBtoYIQ[7] * floatpal[i][2] + RGBtoYIQ[8] * floatpal[i][3]; //Q
+		ciex = SRGBtoXYZ[0] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[1] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[2] * SRGBGammaTransform(floatpal[i][3]); //X
+		ciey = SRGBtoXYZ[3] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[4] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[5] * SRGBGammaTransform(floatpal[i][3]); //Y
+		ciez = SRGBtoXYZ[6] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[7] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[8] * SRGBGammaTransform(floatpal[i][3]); //Z
+		ciex /= D65_X; ciey /= D65_Y; ciez /= D65_Z;
+		Labpal[i][0] = 1.16f * LabTransferFunction(ciey) - 0.16f; //L*
+		Labpal[i][1] = 5.0f * (LabTransferFunction(ciex) - LabTransferFunction(ciey)); //a*
+		Labpal[i][2] = 2.0f * (LabTransferFunction(ciey) - LabTransferFunction(ciez)); //b*
+		Labpal[i][3] = sqrtf(Labpal[i][1] * Labpal[i][1] + Labpal[i][2] * Labpal[i][2]); //C*
+		Labpalvec[0][i] = Labpal[i][0];
+		Labpalvec[1][i] = Labpal[i][1];
+		Labpalvec[2][i] = Labpal[i][2];
+		Labpalvec[3][i] = Labpal[i][3];
 	}
-	uvbias = 1.0f;
-	ibias = 1.0f;
+	uvbias = 2.0f;
+	ibias = 1.5f;
 	RegenerateColourMap();
-	ditherfactor = 0.5f;
-	satditherfactor = 0.0f;
-	hueditherfactor = 0.0f;
+	ditherfactor = 0.55f;
+	satditherfactor = 0.4f;
+	hueditherfactor = 1.0f;
 	sampleratespec = GetSampleRateSpec(22050.0f);
 	planedata = new unsigned char*[4];
 	prevplanedata = new unsigned char*[4];
@@ -299,11 +313,13 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		//Convert it for display
 		inframeCol = (unsigned int*)vidscaleData[0];
 		outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+		omp_set_num_threads(omp_get_max_threads());
+		#pragma omp parallel for shared(outframeCol, inframeCol) schedule(static)
 		for (int i = 0; i < outh; i++)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				outframeCol[j + i * PC_98_WIDTH] = VoidClusterDither16x16WithYIQ(inframeCol[j + i * outWidth], j, i);
+				outframeCol[j + i * PC_98_WIDTH] = VoidClusterDither16x16WithLab(inframeCol[j + i * outWidth], j, i);
 			}
 		}
 
@@ -1004,35 +1020,41 @@ void VideoConverterEngine::SimulateRealResult(unsigned int updateplanes, unsigne
 //PC-98 VRAM is planar, and this codec respects that
 void VideoConverterEngine::CreatePlaneData()
 {
-	unsigned int* convframeptr = (unsigned int*)convertedFrame;
+	const unsigned int* const convframeptr = (unsigned int*)convertedFrame;
 
-	for (int i = 0; i < PC_98_RESOLUTION; i++) //Get colour indices
+	for (int i = 0; i < PC_98_ONEPLANE_BYTE; i++)
 	{
-		for (int j = 0; j < 16; j++)
+		unsigned int inds[8];
+		for (int j = 0; j < 8; j++) //Get colour indices
 		{
-			if (*convframeptr == palette[j])
+			const unsigned int compcol = convframeptr[i * 8 + j];
+			unsigned int curind = 0;
+			for (int k = 15; k >= 0; k--)
 			{
-				colind[i] = j;
-				colind[i] <<= 8; //Preshift index
-				break;
+				if (compcol == palette[k])
+				{
+					curind = k << 8; //Preshift index
+				}
 			}
+			inds[j] = curind;
 		}
-		convframeptr++;
-	}
 
-	for (int i = 0; i < PC_98_ONEPLANE_BYTE; i++) //Write to bitplanes
-	{
-		planedata[0][i] = 0;
-		planedata[1][i] = 0;
-		planedata[2][i] = 0;
-		planedata[3][i] = 0;
-		for (int j = 0; j < 8; j++)
+		unsigned int p0c = (inds[0] & 0x100) >> 1;
+		unsigned int p1c = (inds[0] & 0x200) >> 2;
+		unsigned int p2c = (inds[0] & 0x400) >> 3;
+		unsigned int p3c = (inds[0] & 0x800) >> 4;
+		for (int j = 1; j < 8; j++) //Write to bitplanes
 		{
-			planedata[0][i] |= (colind[i*8 + j] & 0x100) >> (j + 1);
-			planedata[1][i] |= (colind[i*8 + j] & 0x200) >> (j + 2);
-			planedata[2][i] |= (colind[i*8 + j] & 0x400) >> (j + 3);
-			planedata[3][i] |= (colind[i*8 + j] & 0x800) >> (j + 4);
+			const unsigned int curind = inds[j];
+			p0c |= (curind & 0x100) >> (j + 1);
+			p1c |= (curind & 0x200) >> (j + 2);
+			p2c |= (curind & 0x400) >> (j + 3);
+			p3c |= (curind & 0x800) >> (j + 4);
 		}
+		planedata[0][i] = (unsigned char)p0c;
+		planedata[1][i] = (unsigned char)p1c;
+		planedata[2][i] = (unsigned char)p2c;
+		planedata[3][i] = (unsigned char)p3c;
 	}
 }
 
@@ -1082,7 +1104,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol = VoidClusterDither16x16WithYIQ(*inframeCol++, j, i);
+				*outframeCol = VoidClusterDither16x16WithLab(*inframeCol++, j, i);
 				*outframeColLineDouble++ = *outframeCol++;
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
@@ -1095,7 +1117,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol++ = VoidClusterDither16x16WithYIQ(*inframeCol++, j, i);
+				*outframeCol++ = VoidClusterDither16x16WithLab(*inframeCol++, j, i);
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
 		}
