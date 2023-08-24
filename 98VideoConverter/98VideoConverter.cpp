@@ -631,6 +631,7 @@ LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         if (conv != nullptr)
         {
             CheckRadioButton(hWnd, IDC_SAMPLERATE_RADIO_0, IDC_SAMPLERATE_RADIO_7, samplerateradios[conv->GetSampleRateSpec()]);
+            CheckRadioButton(hWnd, IDC_AUDIOCHANNELS_RADIO_0, IDC_AUDIOCHANNELS_RADIO_1, conv->GetIsStereo() ? IDC_AUDIOCHANNELS_RADIO_1 : IDC_AUDIOCHANNELS_RADIO_0);
             CheckRadioButton(hWnd, IDC_RESOLUTION_RADIO_0, IDC_RESOLUTION_RADIO_1, conv->GetIsHalfVerticalResolution() ? IDC_RESOLUTION_RADIO_1 : IDC_RESOLUTION_RADIO_0);
             CheckRadioButton(hWnd, IDC_FRAMERATE_RADIO_0, IDC_FRAMERATE_RADIO_3, framerateradios[conv->GetFrameSkip()]);
         }
@@ -656,6 +657,14 @@ LRESULT CALLBACK SwitchboardProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 else if (IsDlgButtonChecked(hWnd, IDC_RESOLUTION_RADIO_1))
                 {
                     conv->SetIsHalfVerticalResolution(true);
+                }
+                if (IsDlgButtonChecked(hWnd, IDC_AUDIOCHANNELS_RADIO_0))
+                {
+                    conv->SetIsStereo(false);
+                }
+                else if (IsDlgButtonChecked(hWnd, IDC_AUDIOCHANNELS_RADIO_1))
+                {
+                    conv->SetIsStereo(true);
                 }
                 for (int i = 0; i < 3; i++)
                 {

@@ -50,6 +50,10 @@
 #define IDC_FRAMERATE_RADIO_1           1035
 #define IDC_FRAMERATE_RADIO_2           1036
 #define IDC_FRAMERATE_RADIO_3           1037
+#define IDC_AUDIOCHANNELS_GROUP         1038
+#define IDC_AUDIOCHANNELS_RADIO_0       1039
+#define IDC_RADIO2                      1040
+#define IDC_AUDIOCHANNELS_RADIO_1       1040
 #define ID_FILE_EXIT                    32771
 #define ID_FILE_QUIT                    32772
 #define IDM_OPENFILE                    32773
@@ -66,7 +70,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        132
 #define _APS_NEXT_COMMAND_VALUE         32782
-#define _APS_NEXT_CONTROL_VALUE         1035
+#define _APS_NEXT_CONTROL_VALUE         1041
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

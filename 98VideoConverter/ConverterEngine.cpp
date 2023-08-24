@@ -183,8 +183,8 @@ VideoConverterEngine::VideoConverterEngine()
 	minimpactperrun = 0;
 	maxwordsperframe = 10000; //This quality parameter is preferred to the other ones
 	frameskip = 0;
-	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S16;
-	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 1, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Force to mono
+	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S32;
+	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 2, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Use stereo as input to the ADPCM encoder
 	hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
 	isForcedBuzzerAudio = false;
 	isHalfVerticalResolution = false;
@@ -222,6 +222,7 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 	writebuf[0] = 0x0000 | sampleratespec;
 	writebuf[0] |= isForcedBuzzerAudio ? 0x0008 : 0x0000;
 	writebuf[0] |= isHalfVerticalResolution ? 0x0010 : 0x0000;
+	writebuf[0] |= isStereo ? 0x0020 : 0x0000;
 	fwrite(writebuf, 2, 1, writefile); //Write sample rate specifier
 	unsigned char* bufbytes = (unsigned char*)writebuf;
 	for (int i = 0; i < 16; i++)
@@ -328,6 +329,7 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		curTime = actualFrametime * (i + 1);
 		curAudiodata = ProcessAudio(&curAudioLength, curTime);
 		fwrite(&curAudioLength, 2, 1, writefile); //Write audio length for this frame
+		if (isStereo) curAudioLength *= 2; //two channels = two times the data
 		fwrite(curAudiodata, 2, curAudioLength, writefile); //Write audio data
 		ProcessFrame(curFrameLength, &planesToWrite);
 		fwrite(&planesToWrite, 2, 1, writefile);
@@ -401,14 +403,20 @@ void VideoConverterEngine::CreateFullAudioStream()
 	int numsamplesres = (int)(totalTime * realoutsamplerate);
 	audfullstreamShort = new short[numsamplesres + 65536]; //I'm not taking any chances
 	audfullstreamByte = new unsigned char[numsamplesres + 65536];
+	audfullstreamShortDiff = new short[numsamplesres + 65536];
+	audfullstreamByteDiff = new unsigned char[numsamplesres + 65536];
 	if (audstreamIndex == AVERROR_STREAM_NOT_FOUND)
 	{
 		memset(audfullstreamByte, 0, numsamplesres + 32768); //Set to silence if no audio stream was found
+		memset(audfullstreamByteDiff, 0, numsamplesres + 32768);
 		return;
 	}
 
 	
 	short* fullstreamptr = audfullstreamShort;
+	short* fulldiffstreamptr = audfullstreamShortDiff;
+	int* Linputptr;
+	int* Rinputptr;
 	double refTime = 0.0;
 	double oldrefTime = -1.0;
 	int transferredSamples = 2048;
@@ -444,7 +452,18 @@ void VideoConverterEngine::CreateFullAudioStream()
 			av_samples_copy(audorigData, curFrame->data, 0, 0, curFrame->nb_samples, inChLayout.nb_channels, inAudFormat);
 			swr_convert(resamplercontext, audresData, transferredSamples, (const unsigned char**)audorigData, curFrame->nb_samples);
 			fullstreamptr = audfullstreamShort + sampleaddr;
-			memcpy(fullstreamptr, audresData[0], transferredSamples * 2);
+			fulldiffstreamptr = audfullstreamShortDiff + sampleaddr;
+			Linputptr = (int*)(audresData[0]);
+			Rinputptr = Linputptr + 1;
+			for (int i = 0; i < transferredSamples; i++)
+			{
+				const int Lsig = Linputptr[i * 2];
+				const int Rsig = Rinputptr[i * 2];
+				const int meansig = (Lsig >> 1) + (Rsig >> 1);
+				const int diffsig = Lsig - meansig;
+				fullstreamptr[i] = meansig >> 16;
+				fulldiffstreamptr[i] = diffsig >> 16;
+			}
 			oldrefTime = refTime;
 		}
 		av_packet_unref(curPacket);
@@ -457,7 +476,7 @@ void VideoConverterEngine::CreateFullAudioStream()
 	bool isnegative = false;
 	short curmax = 0x007F;
 	short curmin = 0xFF80;
-	for (int i = 0; i < numsamplesres; i++) //ADPCM encode
+	for (int i = 0; i < numsamplesres; i++) //ADPCM encode mean signal
 	{
 		cursample = audfullstreamShort[i];
 		curdiff = cursample - lastsample;
@@ -489,11 +508,50 @@ void VideoConverterEngine::CreateFullAudioStream()
 		curmax = 0x7FFF >> (8 - curshift);
 		curmin = 0xFFFF8000 >> (8 - curshift);
 	}
+	lastsample = 0;
+	curshift = 0;
+	cursample = 0;
+	curdiff = 0;
+	isnegative = false;
+	curmax = 0x007F;
+	curmin = 0xFF80;
+	for (int i = 0; i < numsamplesres; i++) //ADPCM encode difference signal
+	{
+		cursample = audfullstreamShortDiff[i];
+		curdiff = cursample - lastsample;
+		isnegative = (curdiff & 0x8000) != 0;
+		if (isnegative)
+		{
+			if (curdiff < curmin)
+			{
+				curdiff = curmin;
+			}
+		}
+		else
+		{
+			if (curdiff > curmax)
+			{
+				curdiff = curmax;
+			}
+		}
+		curdiff >>= curshift;
+		audfullstreamByteDiff[i] = (signed char)curdiff;
+		curdiff <<= curshift;
+		lastsample += curdiff;
+		curdiff >>= curshift;
+		if (isnegative) curdiff ^= 0xFFFF;
+		if (curdiff <= 0x0018) curshift--;
+		else if (curdiff >= 0x0068) curshift++;
+		if (curshift < 0) curshift = 0;
+		else if (curshift > 8) curshift = 8;
+		curmax = 0x7FFF >> (8 - curshift);
+		curmin = 0xFFFF8000 >> (8 - curshift);
+	}
 
 	swr_free(&resamplercontext);
 }
 
-//Get the ssamples from the full stream that are needed for this frame
+//Get the samples from the full stream that are needed for this frame
 unsigned short* VideoConverterEngine::ProcessAudio(unsigned int* returnLength, double cutoffTime)
 {
 	unsigned short* streamptr = (unsigned short*)(audfullstreamByte) + curtotalByteStreamSize;
@@ -504,6 +562,14 @@ unsigned short* VideoConverterEngine::ProcessAudio(unsigned int* returnLength, d
 		processedAudioData[thisChunkLength] = *streamptr++;
 		thisChunkLength++;
 		refTime = ((double)(curtotalByteStreamSize + thisChunkLength) * 2.0) / (realoutsamplerate);
+	}
+	if (isStereo)
+	{
+		streamptr = (unsigned short*)(audfullstreamByteDiff)+curtotalByteStreamSize;
+		for (int i = 0; i < thisChunkLength; i++)
+		{
+			processedAudioData[thisChunkLength + i] = *streamptr++;
+		}
 	}
 	curtotalByteStreamSize += thisChunkLength;
 	*returnLength = thisChunkLength;
@@ -552,11 +618,6 @@ void VideoConverterEngine::ProcessFrame(unsigned int* returnLength, unsigned int
 				if (impactarray[j + 1] > 0) //distance is 1 word -> saves memory and processing time
 				{
 					impactarray[j] = 0; // 0 -> no impact, but it is so close to other potential deltas that it would be better to include anyway
-				}
-				else if ((j < PC_98_ONEPLANE_WORD - 2) && (impactarray[j + 2] > 0)) //distance is 2 words -> saves processing time
-				{
-					impactarray[j] = 0;
-					impactarray[j + 1] = 0;
 				}
 			}
 		}

@@ -211,6 +211,7 @@ public:
     inline int GetSampleRateSpec() { return sampleratespec; };
     inline bool GetIsHalfVerticalResolution() { return isHalfVerticalResolution; };
     inline int GetFrameSkip() { return frameskip; };
+    inline bool GetIsStereo() { return isStereo; };
     inline void SetBitrate(int wpf) { maxwordsperframe = wpf; };
     inline void SetDitherFactor(float ditfac) { ditherfactor = ditfac; };
     inline void SetSaturationDitherFactor(float ditfac) { satditherfactor = ditfac; };
@@ -220,6 +221,7 @@ public:
     inline void SetSampleRateSpec(int spec) { sampleratespec = spec; };
     inline void SetIsHalfVerticalResolution(bool hvr) { isHalfVerticalResolution = hvr; };
     inline void SetFrameSkip(int fskip) { frameskip = fskip; };
+    inline void SetIsStereo(bool st) { isStereo = st; };
 private:
     inline float SRGBGammaTransform(float val)
     {
@@ -666,8 +668,11 @@ private:
     int audresLineSize;
     short* audfullstreamShort;
     unsigned char* audfullstreamByte;
+    short* audfullstreamShortDiff;
+    unsigned char* audfullstreamByteDiff;
     int curtotalByteStreamSize;
     bool isForcedBuzzerAudio;
+    bool isStereo;
     bool isHalfVerticalResolution;
     unsigned char inputrescaledframe[PC_98_RESOLUTION * 4];
 
