@@ -102,22 +102,22 @@ const unsigned int bwpalette[16] = { 0xFF000000, //This palette is just pure bla
 									 0xFF000000,
 									 0xFFFFFFFF };
 
-const unsigned int lumchrompalette[16] = { 0xFF002200, //This palette cleanly separates luma and chroma
-                                           0xFF557700,
-										   0xFFAACC11, 
-										   0xFFFFFF66,
-										   0xFF004400, 
-										   0xFF009955, 
-										   0xFF22EEAA, 
-										   0xFF77FFFF,
-										   0xFF000099,
-										   0xFF5533EE,
-										   0xFFAA88FF,
-										   0xFFFFDDFF, 
-										   0xFF880000,
-										   0xFFDD1155,
-										   0xFFFF66AA,
-										   0xFFFFBBFF };
+const unsigned int lumchrompalette[16] = { 0xFF000000, //This palette cleanly separates luma and chroma
+                                           0xFF333333,
+										   0xFF999999, 
+										   0xFFFFFFFF,
+										   0xFF220000, 
+										   0xFF770000, 
+										   0xFFCC0000, 
+										   0xFFFF0000,
+										   0xFF002200,
+										   0xFF007700,
+										   0xFF00CC00,
+										   0xFF00FF00, 
+										   0xFF000022,
+										   0xFF000077,
+										   0xFF0000CC,
+										   0xFF0000FF };
 
 VideoConverterEngine::VideoConverterEngine()
 {
