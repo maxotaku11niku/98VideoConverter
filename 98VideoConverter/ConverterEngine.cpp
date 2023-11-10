@@ -122,7 +122,6 @@ const unsigned int lumchrompalette[16] = { 0xFF000000, //This palette cleanly se
 VideoConverterEngine::VideoConverterEngine()
 {
 	alreadyOpen = false;
-	float ciex, ciey, ciez;
 	for (int i = 0; i < 16; i++)
 	{
 		palette[i] = basepalette[i];
@@ -130,30 +129,20 @@ VideoConverterEngine::VideoConverterEngine()
 		floatpal[i][1] = ((float)((palette[i] & 0x00FF0000) >> 16)) / 255.0f; //R
 		floatpal[i][2] = ((float)((palette[i] & 0x0000FF00) >> 8)) / 255.0f; //G
 		floatpal[i][3] = ((float)(palette[i] & 0x000000FF)) / 255.0f; //B
-		yuvpal[i][0] = RGBtoYUV[0] * floatpal[i][1] + RGBtoYUV[1] * floatpal[i][2] + RGBtoYUV[2] * floatpal[i][3]; //Y
-		yuvpal[i][1] = RGBtoYUV[3] * floatpal[i][1] + RGBtoYUV[4] * floatpal[i][2] + RGBtoYUV[5] * floatpal[i][3]; //U
-		yuvpal[i][2] = RGBtoYUV[6] * floatpal[i][1] + RGBtoYUV[7] * floatpal[i][2] + RGBtoYUV[8] * floatpal[i][3]; //V
-		yiqpal[i][0] = RGBtoYIQ[0] * floatpal[i][1] + RGBtoYIQ[1] * floatpal[i][2] + RGBtoYIQ[2] * floatpal[i][3]; //Y
-		yiqpal[i][1] = RGBtoYIQ[3] * floatpal[i][1] + RGBtoYIQ[4] * floatpal[i][2] + RGBtoYIQ[5] * floatpal[i][3]; //I
-		yiqpal[i][2] = RGBtoYIQ[6] * floatpal[i][1] + RGBtoYIQ[7] * floatpal[i][2] + RGBtoYIQ[8] * floatpal[i][3]; //Q
-		ciex = SRGBtoXYZ[0] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[1] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[2] * SRGBGammaTransform(floatpal[i][3]); //X
-		ciey = SRGBtoXYZ[3] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[4] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[5] * SRGBGammaTransform(floatpal[i][3]); //Y
-		ciez = SRGBtoXYZ[6] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoXYZ[7] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoXYZ[8] * SRGBGammaTransform(floatpal[i][3]); //Z
-		ciex /= D65_X; ciey /= D65_Y; ciez /= D65_Z;
-		Labpal[i][0] = 1.16f * LabTransferFunction(ciey) - 0.16f; //L*
-		Labpal[i][1] = 5.0f * (LabTransferFunction(ciex) - LabTransferFunction(ciey)); //a*
-		Labpal[i][2] = 2.0f * (LabTransferFunction(ciey) - LabTransferFunction(ciez)); //b*
-		Labpal[i][3] = sqrtf(Labpal[i][1] * Labpal[i][1] + Labpal[i][2] * Labpal[i][2]); //C*
-		Labpalvec[0][i] = Labpal[i][0];
-		Labpalvec[1][i] = Labpal[i][1];
-		Labpalvec[2][i] = Labpal[i][2];
-		Labpalvec[3][i] = Labpal[i][3];
+		float l = SRGBtoLMS[0] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoLMS[1] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoLMS[2] * SRGBGammaTransform(floatpal[i][3]);
+		float m = SRGBtoLMS[3] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoLMS[4] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoLMS[5] * SRGBGammaTransform(floatpal[i][3]);
+		float s = SRGBtoLMS[6] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoLMS[7] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoLMS[8] * SRGBGammaTransform(floatpal[i][3]);
+		l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+		OKLabpal[i][0] = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+		OKLabpal[i][1] = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
+		OKLabpal[i][2] = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+		OKLabpalvec[0][i] = OKLabpal[i][0];
+		OKLabpalvec[1][i] = OKLabpal[i][1];
+		OKLabpalvec[2][i] = OKLabpal[i][2];
 	}
-	uvbias = 2.0f;
-	ibias = 1.5f;
-	RegenerateColourMap();
-	ditherfactor = 0.55f;
-	satditherfactor = 0.4f;
+	uvbias = 0.7f;
+	ditherfactor = 0.5f;
+	satditherfactor = 0.5f;
 	hueditherfactor = 1.0f;
 	sampleratespec = GetSampleRateSpec(22050.0f);
 	planedata = new unsigned char*[4];
@@ -202,7 +191,6 @@ void VideoConverterEngine::ResetPlaneData()
 void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCallback)(unsigned int))
 {
 	ResetPlaneData();
-	RegenerateColourMap();
 	curtotalByteStreamSize = 0;
 	actualFramerate = PC_98_FRAMERATE / ((double)(frameskip + 1));
 	actualFrametime = ((double)(frameskip + 1)) / PC_98_FRAMERATE;
@@ -320,7 +308,7 @@ void VideoConverterEngine::EncodeVideo(wchar_t* outFileName, bool (*progressCall
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				outframeCol[j + i * PC_98_WIDTH] = VoidClusterDither16x16WithLab(inframeCol[j + i * outWidth], j, i);
+				outframeCol[j + i * PC_98_WIDTH] = VoidClusterDither16x16(inframeCol[j + i * outWidth], j, i);
 			}
 		}
 
@@ -1165,7 +1153,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol = VoidClusterDither16x16WithLab(*inframeCol++, j, i);
+				*outframeCol = VoidClusterDither16x16(*inframeCol++, j, i);
 				*outframeColLineDouble++ = *outframeCol++;
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
@@ -1178,7 +1166,7 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 		{
 			for (int j = 0; j < outWidth; j++)
 			{
-				*outframeCol++ = VoidClusterDither16x16WithLab(*inframeCol++, j, i);
+				*outframeCol++ = VoidClusterDither16x16(*inframeCol++, j, i);
 			}
 			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
 		}

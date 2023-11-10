@@ -44,7 +44,6 @@
 #define IDC_RESOLUTION_RADIO_1          1029
 #define IDC_INPUTIMAGE                  1030
 #define IDC_IBIASLABEL                  1031
-#define IDC_IBIASEDIT                   1032
 #define IDC_FRAMERATE_GROUP             1033
 #define IDC_FRAMERATE_RADIO_0           1034
 #define IDC_FRAMERATE_RADIO_1           1035
@@ -52,7 +51,6 @@
 #define IDC_FRAMERATE_RADIO_3           1037
 #define IDC_AUDIOCHANNELS_GROUP         1038
 #define IDC_AUDIOCHANNELS_RADIO_0       1039
-#define IDC_RADIO2                      1040
 #define IDC_AUDIOCHANNELS_RADIO_1       1040
 #define ID_FILE_EXIT                    32771
 #define ID_FILE_QUIT                    32772

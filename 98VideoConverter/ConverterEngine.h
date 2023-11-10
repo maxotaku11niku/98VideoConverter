@@ -36,22 +36,22 @@ extern "C"
 #define CD_CLAMP_HIGH(x, high)  (((x) > (high)) ? (high) : (x))
 #define CD_CLAMP_LOW(x, low)  (((x) < (low)) ? (low) : (x))
 
-constexpr float odithermatrix2[4] = { -0.5f,   0.0f,
-                                       0.25f, -0.25f };
+constexpr float bayermatrix2[4] = { -0.5f,   0.0f,
+                                     0.25f, -0.25f };
 
-constexpr float odithermatrix4[16] =  { -0.5f,     0.0f,    -0.375f,   0.125f,
-                                         0.25f,   -0.25f,    0.375f,  -0.125f,
-                                        -0.3125f,  0.1875f, -0.4375f,  0.0625f,
-                                         0.4375f, -0.0625f,  0.3125f, -0.1875f };
+constexpr float bayermatrix4[16] = { -0.5f,     0.0f,    -0.375f,   0.125f,
+                                      0.25f,   -0.25f,    0.375f,  -0.125f,
+                                     -0.3125f,  0.1875f, -0.4375f,  0.0625f,
+                                      0.4375f, -0.0625f,  0.3125f, -0.1875f };
 
-constexpr float odithermatrix8[64] =   { -0.5f,       0.0f,      -0.375f,     0.125f,    -0.46875f,   0.03125f,  -0.34375f,   0.15625f,
-                                          0.25f,     -0.25f,      0.375f,    -0.125f,     0.28125f,  -0.21875f,   0.40625f,  -0.09375f,
-                                         -0.3125f,    0.1875f,   -0.4375f,    0.0625f,   -0.28125f,   0.21875f,  -0.40625f,   0.09375f,
-                                          0.4375f,   -0.0625f,    0.3125f,   -0.1875f,    0.46875f,  -0.03125f,   0.34375f,  -0.15625f,
-                                         -0.453125f,  0.046875f, -0.328125f,  0.171875f, -0.484375f,  0.015625f, -0.359375f,  0.140625f,
-                                          0.296875f, -0.203125f,  0.421875f, -0.078125f,  0.265625f, -0.234375f,  0.390625f, -0.109375f,
-                                         -0.265625f,  0.234375f, -0.390625f,  0.109375f, -0.296875f,  0.203125f, -0.421875f,  0.078125f,
-                                          0.484375f, -0.015625f,  0.359375f, -0.140625f,  0.453125f, -0.046875f,  0.328125f, -0.171875f };
+constexpr float bayermatrix8[64] = { -0.5f,       0.0f,      -0.375f,     0.125f,    -0.46875f,   0.03125f,  -0.34375f,   0.15625f,
+                                      0.25f,     -0.25f,      0.375f,    -0.125f,     0.28125f,  -0.21875f,   0.40625f,  -0.09375f,
+                                     -0.3125f,    0.1875f,   -0.4375f,    0.0625f,   -0.28125f,   0.21875f,  -0.40625f,   0.09375f,
+                                      0.4375f,   -0.0625f,    0.3125f,   -0.1875f,    0.46875f,  -0.03125f,   0.34375f,  -0.15625f,
+                                     -0.453125f,  0.046875f, -0.328125f,  0.171875f, -0.484375f,  0.015625f, -0.359375f,  0.140625f,
+                                      0.296875f, -0.203125f,  0.421875f, -0.078125f,  0.265625f, -0.234375f,  0.390625f, -0.109375f,
+                                     -0.265625f,  0.234375f, -0.390625f,  0.109375f, -0.296875f,  0.203125f, -0.421875f,  0.078125f,
+                                      0.484375f, -0.015625f,  0.359375f, -0.140625f,  0.453125f, -0.046875f,  0.328125f, -0.171875f };
 
 //this should produce some amazing results
 constexpr float vcdithermatrix16_1[256] = { -0.35546875f, -0.05859375f,  0.4765625f,   0.1796875f,  -0.1875f,     -0.046875f,   -0.421875f,    0.1171875f,  -0.16015625f,  0.46484375f, -0.09765625f, -0.40234375f,  0.12890625f,  0.28515625f, -0.27734375f, -0.4375f,
@@ -125,6 +125,14 @@ constexpr float SRGBtoXYZ[9] = { 0.4124f, 0.3576f, 0.1805f,
                                  0.2126f, 0.7152f, 0.0722f,
                                  0.0193f, 0.1192f, 0.9505f };
 
+constexpr float SRGBtoLMS[9] = { 0.4122214708f, 0.5363325363f, 0.0514459929f,
+                                 0.2119034982f, 0.6806995451f, 0.1073969566f,
+                                 0.0883024619f, 0.2817188376f, 0.6299787005f };
+
+constexpr float CRLMStoOKLab[9] = { 0.2104542553f,  0.7936177850f, -0.0040720468f,
+                                    1.9779984951f, -2.4285922050f,  0.4505937099f,
+                                    0.0259040371f,  0.7827717662f, -0.8086757660f };
+
 constexpr float SRGBtoLinearLUT[256] = { 0.0f,               0.000303526983549f, 0.000607053967098f, 0.000910580950647f, 0.001214107934195f, 0.001517634917744f, 0.001821161901293f, 0.002124688884842f,
                                          0.002428215868391f, 0.002731742851940f, 0.003035269835488f, 0.003346535763899f, 0.003676507324047f, 0.004024717018496f, 0.004391442037410f, 0.004776953480694f,
                                          0.005181516702338f, 0.005605391624203f, 0.006048833022857f, 0.006512090792594f, 0.006995410187265f, 0.007499032043226f, 0.008023192985385f, 0.008568125618069f,
@@ -158,71 +166,6 @@ constexpr float SRGBtoLinearLUT[256] = { 0.0f,               0.000303526983549f,
                                          0.871367119198797f, 0.879622396887832f, 0.887923117881966f, 0.896269353374266f, 0.904661174391150f, 0.913098651793419f, 0.921581856277295f, 0.930110858375424f,
                                          0.938685728457888f, 0.947306536733200f, 0.955973353249286f, 0.964686247894465f, 0.973445290398413f, 0.982250550333117f, 0.991102097113830f, 1.0f };
 
-constexpr float LabTransferLUT[512] = { 0.137931034482759f, 0.153169854516099f, 0.168408674549440f, 0.183647494582780f, 0.198886314616121f, 0.213886333004646f, 0.227288144598433f, 0.239272275594637f,
-                                        0.250162972666756f, 0.260179976285348f, 0.269479893237379f, 0.278178735304251f, 0.286365117771116f, 0.294108437607342f, 0.301464176677931f, 0.308477471870579f,
-                                        0.315185595167122f, 0.321619723141185f, 0.327806228883058f, 0.333767644356577f, 0.339523390013196f, 0.345090336662841f, 0.350483244242960f, 0.355715108774249f,
-                                        0.360797439835453f, 0.365740484760828f, 0.370553411493183f, 0.375244459000134f, 0.379821061985752f, 0.384289955043832f, 0.388657260228096f, 0.392928561140032f,
-                                        0.397108965974701f, 0.401203161461214f, 0.405215459246940f, 0.409149835973427f, 0.413009968056422f, 0.416799261996437f, 0.420520880898678f, 0.424177767762972f,
-                                        0.427772666009293f, 0.431308137627451f, 0.434786579276822f, 0.438210236610645f, 0.441581217057151f, 0.444901501254858f, 0.448172953310320f, 0.451397330022406f,
-                                        0.454576289196866f, 0.457711397157891f, 0.460804135548922f, 0.463855907502761f, 0.466868043250618f, 0.469841805230866f, 0.472778392750683f, 0.475678946247212f,
-                                        0.478544551189275f, 0.481376241655790f, 0.484175003622878f, 0.486941777987941f, 0.489677463355847f, 0.492382918609576f, 0.495058965285231f, 0.497706389769222f,
-                                        0.500325945333512f, 0.502918354023218f, 0.505484308409355f, 0.508024473218254f, 0.510539486848038f, 0.513029962781513f, 0.515496490903956f, 0.517939638733444f,
-                                        0.520359952570695f, 0.522757958574710f, 0.525134163769959f, 0.527489056990327f, 0.529823109764579f, 0.532136777147688f, 0.534430498501987f, 0.536704698231785f,
-                                        0.538959786474757f, 0.541196159753179f, 0.543414201587781f, 0.545614283076807f, 0.547796763442655f, 0.549961990548244f, 0.552110301385165f, 0.554242022535420f,
-                                        0.556357470608501f, 0.558456952655374f, 0.560540766560826f, 0.562609201415551f, 0.564662537869225f, 0.566701048465720f, 0.568724997961573f, 0.570734643628690f,
-                                        0.572730235542231f, 0.574712016854555f, 0.576680224056019f, 0.578635087223410f, 0.580576830256697f, 0.582505671104777f, 0.584421821980818f, 0.586325489567785f,
-                                        0.588216875214683f, 0.590096175124022f, 0.591963580530975f, 0.593819277874672f, 0.595663448962051f, 0.597496271124644f, 0.599317917368675f, 0.601128556518806f,
-                                        0.602928353355862f, 0.604717468748826f, 0.606496059781411f, 0.608264279873450f, 0.610022278897391f, 0.611770203290102f, 0.613508196160243f, 0.615236397391395f,
-                                        0.616954943741157f, 0.618663968936405f, 0.620363603764878f, 0.622053976163280f, 0.623735211302038f, 0.625407431666890f, 0.627070757137425f, 0.628725305062727f,
-                                        0.630371190334244f, 0.632008525456011f, 0.633637420612335f, 0.635257983733057f, 0.636870320556498f, 0.638474534690182f, 0.640070727669432f, 0.641658999013939f,
-                                        0.643239446282369f, 0.644812165125108f, 0.646377249335212f, 0.647934790897640f, 0.649484880036835f, 0.651027605262727f, 0.652563053415212f, 0.654091309707176f,
-                                        0.655612457766116f, 0.657126579674421f, 0.658633756008350f, 0.660134065875771f, 0.661627586952713f, 0.663114395518753f, 0.664594566491309f, 0.666068173458861f,
-                                        0.667535288713155f, 0.668995983280410f, 0.670450326951589f, 0.671898388311739f, 0.673340234768464f, 0.674775932579537f, 0.676205546879701f, 0.677629141706673f,
-                                        0.679046780026393f, 0.680458523757533f, 0.681864433795299f, 0.683264570034552f, 0.684658991392261f, 0.686047755829323f, 0.687430920371770f, 0.688808541131374f,
-                                        0.690180673325683f, 0.691547371297499f, 0.692908688533818f, 0.694264677684258f, 0.695615390578972f, 0.696960878246090f, 0.698301190928684f, 0.699636378101277f,
-                                        0.700966488485919f, 0.702291570067833f, 0.703611670110650f, 0.704926835171246f, 0.706237111114192f, 0.707542543125833f, 0.708843175727998f, 0.710139052791368f,
-                                        0.711430217548497f, 0.712716712606506f, 0.713998579959455f, 0.715275861000410f, 0.716548596533204f, 0.717816826783912f, 0.719080591412035f, 0.720339929521420f,
-                                        0.721594879670906f, 0.722845479884715f, 0.724091767662591f, 0.725333779989696f, 0.726571553346270f, 0.727805123717060f, 0.729034526600530f, 0.730259797017844f,
-                                        0.731480969521655f, 0.732698078204674f, 0.733911156708048f, 0.735120238229545f, 0.736325355531547f, 0.737526540948864f, 0.738723826396369f, 0.739917243376463f,
-                                        0.741106822986365f, 0.742292595925248f, 0.743474592501207f, 0.744652842638080f, 0.745827375882114f, 0.746998221408484f, 0.748165408027672f, 0.749328964191707f,
-                                        0.750488918000268f, 0.751645297206655f, 0.752798129223633f, 0.753947441129154f, 0.755093259671950f, 0.756235611277014f, 0.757374522050964f, 0.758510017787292f,
-                                        0.759642123971504f, 0.760770865786159f, 0.761896268115791f, 0.763018355551745f, 0.764137152396899f, 0.765252682670301f, 0.766364970111706f, 0.767474038186022f,
-                                        0.768579910087663f, 0.769682608744826f, 0.770782156823665f, 0.771878576732398f, 0.772971890625323f, 0.774062120406758f, 0.775149287734905f, 0.776233414025633f,
-                                        0.777314520456191f, 0.778392627968854f, 0.779467757274485f, 0.780539928856043f, 0.781609162972013f, 0.782675479659777f, 0.783738898738920f, 0.784799439814466f,
-                                        0.785857122280064f, 0.786911965321110f, 0.787963987917804f, 0.789013208848161f, 0.790059646690958f, 0.791103319828627f, 0.792144246450105f, 0.793182444553612f,
-                                        0.794217931949401f, 0.795250726262438f, 0.796280844935048f, 0.797308305229503f, 0.798333124230572f, 0.799355318848018f, 0.800374905819053f, 0.801391901710755f,
-                                        0.802406322922428f, 0.803418185687938f, 0.804427506077994f, 0.805434300002398f, 0.806438583212246f, 0.807440371302105f, 0.808439679712136f, 0.809436523730193f,
-                                        0.810430918493879f, 0.811422878992573f, 0.812412420069412f, 0.813399556423251f, 0.814384302610580f, 0.815366673047419f, 0.816346682011169f, 0.817324343642442f,
-                                        0.818299671946855f, 0.819272680796796f, 0.820243383933160f, 0.821211794967059f, 0.822177927381498f, 0.823141794533029f, 0.824103409653377f, 0.825062785851036f,
-                                        0.826019936112844f, 0.826974873305526f, 0.827927610177224f, 0.828878159358986f, 0.829826533366243f, 0.830772744600264f, 0.831716805349573f, 0.832658727791363f,
-                                        0.833598523992874f, 0.834536205912752f, 0.835471785402392f, 0.836405274207253f, 0.837336683968158f, 0.838266026222570f, 0.839193312405849f, 0.840118553852493f,
-                                        0.841041761797355f, 0.841962947376844f, 0.842882121630107f, 0.843799295500195f, 0.844714479835207f, 0.845627685389419f, 0.846538922824399f, 0.847448202710102f,
-                                        0.848355535525943f, 0.849260931661870f, 0.850164401419403f, 0.851065955012666f, 0.851965602569410f, 0.852863354132005f, 0.853759219658433f, 0.854653209023259f,
-                                        0.855545332018586f, 0.856435598355001f, 0.857324017662506f, 0.858210599491433f, 0.859095353313347f, 0.859978288521939f, 0.860859414433902f, 0.861738740289796f,
-                                        0.862616275254902f, 0.863492028420060f, 0.864366008802502f, 0.865238225346665f, 0.866108686924999f, 0.866977402338761f, 0.867844380318796f, 0.868709629526314f,
-                                        0.869573158553645f, 0.870434975924995f, 0.871295090097184f, 0.872153509460378f, 0.873010242338808f, 0.873865296991480f, 0.874718681612876f, 0.875570404333646f,
-                                        0.876420473221290f, 0.877268896280829f, 0.878115681455467f, 0.878960836627250f, 0.879804369617708f, 0.880646288188492f, 0.881486600042007f, 0.882325312822025f,
-                                        0.883162434114302f, 0.883997971447180f, 0.884831932292183f, 0.885664324064607f, 0.886495154124096f, 0.887324429775217f, 0.888152158268027f, 0.888978346798627f,
-                                        0.889803002509715f, 0.890626132491131f, 0.891447743780388f, 0.892267843363206f, 0.893086438174035f, 0.893903535096568f, 0.894719140964251f, 0.895533262560790f,
-                                        0.896345906620641f, 0.897157079829505f, 0.897966788824812f, 0.898775040196194f, 0.899581840485965f, 0.900387196189579f, 0.901191113756096f, 0.901993599588632f,
-                                        0.902794660044813f, 0.903594301437212f, 0.904392530033792f, 0.905189352058337f, 0.905984773690877f, 0.906778801068112f, 0.907571440283826f, 0.908362697389304f,
-                                        0.909152578393732f, 0.909941089264604f, 0.910728235928113f, 0.911514024269550f, 0.912298460133686f, 0.913081549325155f, 0.913863297608834f, 0.914643710710217f,
-                                        0.915422794315781f, 0.916200554073352f, 0.916976995592467f, 0.917752124444727f, 0.918525946164151f, 0.919298466247524f, 0.920069690154739f, 0.920839623309137f,
-                                        0.921608271097843f, 0.922375638872099f, 0.923141731947589f, 0.923906555604764f, 0.924670115089165f, 0.925432415611736f, 0.926193462349138f, 0.926953260444060f,
-                                        0.927711815005522f, 0.928469131109181f, 0.929225213797626f, 0.929980068080677f, 0.930733698935671f, 0.931486111307762f, 0.932237310110194f, 0.932987300224591f,
-                                        0.933736086501235f, 0.934483673759341f, 0.935230066787329f, 0.935975270343097f, 0.936719289154284f, 0.937462127918537f, 0.938203791303772f, 0.938944283948429f,
-                                        0.939683610461731f, 0.940421775423935f, 0.941158783386580f, 0.941894638872737f, 0.942629346377251f, 0.943362910366984f, 0.944095335281054f, 0.944826625531069f,
-                                        0.945556785501365f, 0.946285819549234f, 0.947013732005152f, 0.947740527173011f, 0.948466209330336f, 0.949190782728511f, 0.949914251592996f, 0.950636620123547f,
-                                        0.951357892494425f, 0.952078072854613f, 0.952797165328026f, 0.953515174013716f, 0.954232102986078f, 0.954947956295056f, 0.955662737966343f, 0.956376452001579f,
-                                        0.957089102378549f, 0.957800693051379f, 0.958511227950729f, 0.959220710983981f, 0.959929146035434f, 0.960636536966483f, 0.961342887615814f, 0.962048201799578f,
-                                        0.962752483311579f, 0.963455735923451f, 0.964157963384834f, 0.964859169423554f, 0.965559357745794f, 0.966258532036268f, 0.966956695958390f, 0.967653853154446f,
-                                        0.968350007245756f, 0.969045161832846f, 0.969739320495606f, 0.970432486793456f, 0.971124664265507f, 0.971815856430714f, 0.972506066788043f, 0.973195298816618f,
-                                        0.973883555975882f, 0.974570841705744f, 0.975257159426735f, 0.975942512540156f, 0.976626904428225f, 0.977310338454227f, 0.977992817962657f, 0.978674346279364f,
-                                        0.979354926711694f, 0.980034562548634f, 0.980713257060947f, 0.981391013501315f, 0.982067835104471f, 0.982743725087341f, 0.983418686649175f, 0.984092722971679f,
-                                        0.984765837219151f, 0.985438032538609f, 0.986109312059920f, 0.986779678895931f, 0.987449136142592f, 0.988117686879085f, 0.988785334167950f, 0.989452081055203f,
-                                        0.990117930570462f, 0.990782885727071f, 0.991446949522211f, 0.992110124937030f, 0.992772414936751f, 0.993433822470797f, 0.994094350472898f, 0.994754001861215f,
-                                        0.995412779538444f, 0.996070686391936f, 0.996727725293804f, 0.997383899101035f, 0.998039210655599f, 0.998693662784557f, 0.999347258300169f, 1.0f };
-
 class VideoConverterEngine
 {
 public:
@@ -241,7 +184,6 @@ public:
     inline float GetSaturationDitherFactor() { return satditherfactor; };
     inline float GetHueDitherFactor() { return hueditherfactor; };
     inline float GetUVBias() { return uvbias; };
-    inline float GetIBias() { return ibias; };
     inline int GetSampleRateSpec() { return sampleratespec; };
     inline bool GetIsHalfVerticalResolution() { return isHalfVerticalResolution; };
     inline int GetFrameSkip() { return frameskip; };
@@ -251,7 +193,6 @@ public:
     inline void SetSaturationDitherFactor(float ditfac) { satditherfactor = ditfac; };
     inline void SetHueDitherFactor(float ditfac) { hueditherfactor = ditfac; };
     inline void SetUVBias(float uvb) { uvbias = uvb; };
-    inline void SetIBias(float ib) { ibias = ib; };
     inline void SetSampleRateSpec(int spec) { sampleratespec = spec; };
     inline void SetIsHalfVerticalResolution(bool hvr) { isHalfVerticalResolution = hvr; };
     inline void SetFrameSkip(int fskip) { frameskip = fskip; };
@@ -262,148 +203,19 @@ private:
         return val > 0.04045f ? powf((val + 0.055f) / 1.055f, 2.4f) : (val / 12.92f);
     }
 
-    inline float LabTransferFunction(float val)
-    {
-        return val > (0.008856451679f) ? powf(val, 0.333333333333333333f) : ((val * 7.787037037f) + 0.1379310345f);
-    }
-
-    inline float LabTransferFunctionLerp(float val)
-    {
-        if (val <= 0.0f) return LabTransferLUT[0];
-        else if (val >= 1.0f) return LabTransferLUT[511];
-        const float rescval = val * 511.0f;
-        const int lbound = (int)rescval;
-        const float lerpfac = rescval - (float)lbound;
-        const int ubound = lbound + 1;
-        return (1.0f - lerpfac) * LabTransferLUT[lbound] + lerpfac * LabTransferLUT[ubound];
-    }
-
-    inline unsigned int GetClosestColour(unsigned int argbcolour)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        float y = RGBtoYUV[0] * floatcol[1] + RGBtoYUV[1] * floatcol[2] + RGBtoYUV[2] * floatcol[3]; //Y
-        float u = RGBtoYUV[3] * floatcol[1] + RGBtoYUV[4] * floatcol[2] + RGBtoYUV[5] * floatcol[3]; //U
-        float v = RGBtoYUV[6] * floatcol[1] + RGBtoYUV[7] * floatcol[2] + RGBtoYUV[8] * floatcol[3]; //V
-        float lowestDistance = 999999.0f; //No way it would be higher anyway
-        float curDistance = 0.0f; //Actually distance squared but it doesn't matter
-        int setIndex = 0;
-        float ydif = 0.0f;
-        float udif = 0.0f;
-        float vdif = 0.0f;
-        for (int i = 0; i < 16; i++)
-        {
-            ydif = (y - yuvpal[i][0]) * uvbias;
-            udif = u - yuvpal[i][1];
-            vdif = v - yuvpal[i][2];
-            curDistance = ydif * ydif + udif * udif + vdif * vdif;//Square of the Euclidean norm
-            if (curDistance < lowestDistance)
-            {
-                lowestDistance = curDistance;
-                setIndex = i;
-            }
-        }
-        return palette[setIndex];
-    }
-
-    inline unsigned int GetClosestColour(float r, float g, float b)
-    {
-        float lowestDistance = 999999.0f; //No way it would be higher anyway
-        float curDistance = 0.0f; //Actually distance squared but it doesn't matter
-        int setIndex = 0;
-        float y = RGBtoYUV[0] * r + RGBtoYUV[1] * g + RGBtoYUV[2] * b; //Y
-        float u = RGBtoYUV[3] * r + RGBtoYUV[4] * g + RGBtoYUV[5] * b; //U
-        float v = RGBtoYUV[6] * r + RGBtoYUV[7] * g + RGBtoYUV[8] * b; //V
-        float ydif = 0.0f;
-        float udif = 0.0f;
-        float vdif = 0.0f;
-        for (int i = 0; i < 16; i++)
-        {
-            ydif = (y - yuvpal[i][0]) * uvbias;
-            udif = u - yuvpal[i][1];
-            vdif = v - yuvpal[i][2];
-            curDistance = ydif * ydif + udif * udif + vdif * vdif;
-            if (curDistance < lowestDistance)
-            {
-                lowestDistance = curDistance;
-                setIndex = i;
-            }
-        }
-        return palette[setIndex];
-    }
-
-    inline unsigned int GetClosestYUVColour(float y, float u, float v)
-    {
-        float lowestDistance = 999999.0f; //No way it would be higher anyway
-        float curDistance = 0.0f; //Actually some sort of weird metric
-        int setIndex = 0;
-        float ydif = 0.0f;
-        float udif = 0.0f;
-        float vdif = 0.0f;
-        for (int i = 0; i < 16; i++)
-        {
-            ydif = fabsf((y - yuvpal[i][0]) * uvbias);
-            udif = u - yuvpal[i][1];
-            vdif = v - yuvpal[i][2];
-            curDistance = ydif + sqrtf(udif * udif + vdif * vdif);
-            if (curDistance < lowestDistance)
-            {
-                lowestDistance = curDistance;
-                setIndex = i;
-            }
-        }
-        return palette[setIndex];
-    }
-
-    inline unsigned int GetClosestYIQColour(float y, float i, float q)
-    {
-        float lowestDistance = 999999.0f; //No way it would be higher anyway
-        float curDistance = 0.0f; //Actually some sort of weird metric
-        int setIndex = 0;
-        float ydif = 0.0f;
-        float idif = 0.0f;
-        float qdif = 0.0f;
-        for (int j = 0; j < 16; j++)
-        {
-            ydif = fabsf((y - yiqpal[j][0]) * uvbias);
-            idif = i - yiqpal[j][1];
-            qdif = (q - yiqpal[j][2]) * ibias;
-            curDistance = ydif + sqrtf(idif * idif + qdif * qdif);
-            if (curDistance < lowestDistance)
-            {
-                lowestDistance = curDistance;
-                setIndex = j;
-            }
-        }
-        return palette[setIndex];
-    }
-
-    inline unsigned int GetClosestLabColour(const float L, const float a, const float b)
+    inline unsigned int GetClosestOKLabColour(const float L, const float a, const float b)
     {
         int dists[16]; //Integer comparisons are faster
         const float uvb = uvbias;
-        const float ib = ibias;
-        const float* const Lptr = Labpalvec[0];
-        const float* const aptr = Labpalvec[1];
-        const float* const bptr = Labpalvec[2];
-        const float* const sptr = Labpalvec[3];
-        const float sat = sqrtf(a * a + b * b);
-        const float huefac = 1.0f + 0.015f * sat;
-        const float satfac = 1.0f + 0.045f * sat;
-        const float sfacu = 1.0f / (satfac * satfac);
-        const float hfacu = 1.0f / (huefac * huefac);
+        const float* const Lptr = OKLabpalvec[0];
+        const float* const aptr = OKLabpalvec[1];
+        const float* const bptr = OKLabpalvec[2];
         for (int j = 0; j < 16; j++) //Organised like this to get the compiler to vectorise it
         {
             const float Ldif = (L - Lptr[j]) * uvb;
-            const float adif = (a - aptr[j]) * ib;
+            const float adif = a - aptr[j];
             const float bdif = b - bptr[j];
-            const float sdif = sat - sptr[j];
-            const float sdifsq = sdif * sdif;
-            const float hdif = adif * adif + bdif * bdif - sdifsq;
-            dists[j] = (int)((Ldif * Ldif + sdifsq * sfacu + hdif * hfacu) * 1000000.0f);
+            dists[j] = (int)((Ldif * Ldif + adif * adif + bdif * bdif) * 1000000.0f);
         }
         int lowestDistance = dists[0];
         int setIndex = 0;
@@ -416,191 +228,114 @@ private:
         return palette[setIndex];
     }
 
-    inline unsigned int GetClosestColourAccel(unsigned int argbcolour)
+    inline unsigned int BayerDither2x2(unsigned int argbcolour, unsigned int x, unsigned int y)
     {
-        argbcolour &= 0x00FFFFFF;
-        return nearestcolours[argbcolour];
+        const int R = (argbcolour & 0x00FF0000) >> 16;
+        const int G = (argbcolour & 0x0000FF00) >> 8;
+        const int B = argbcolour & 0x000000FF;
+        float l = SRGBtoLMS[0] * SRGBtoLinearLUT[R] + SRGBtoLMS[1] * SRGBtoLinearLUT[G] + SRGBtoLMS[2] * SRGBtoLinearLUT[B];
+        float m = SRGBtoLMS[3] * SRGBtoLinearLUT[R] + SRGBtoLMS[4] * SRGBtoLinearLUT[G] + SRGBtoLMS[5] * SRGBtoLinearLUT[B];
+        float s = SRGBtoLMS[6] * SRGBtoLinearLUT[R] + SRGBtoLMS[7] * SRGBtoLinearLUT[G] + SRGBtoLMS[8] * SRGBtoLinearLUT[B];
+        l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+        float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+        float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
+        float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        float sat = sqrtf(a * a + b * b);
+        float hue = atan2f(b, a);
+        const unsigned int matind1 = (x & 0x01) + 2 * (y & 0x01);
+        const unsigned int matind2 = ((x + 1) & 0x01) + 2 * (y & 0x01);
+        const unsigned int matind3 = (x & 0x01) + 2 * ((y + 1) & 0x01);
+        const float midsat = -satditherfactor * bayermatrix2[matind2];
+        L += ditherfactor * bayermatrix2[matind1];
+        sat *= 1.0f + midsat;
+        sat += midsat * 0.5f;
+        hue += hueditherfactor * bayermatrix2[matind3];
+        a = sat * cosf(hue);
+        b = sat * sinf(hue);
+        return GetClosestOKLabColour(L, a, b);
     }
 
-    inline unsigned int GetClosestColourAccel(float r, float g, float b)
+    inline unsigned int BayerDither4x4(unsigned int argbcolour, unsigned int x, unsigned int y)
     {
-        unsigned int argbcolour = (unsigned int)(b * 255.0f);
-        argbcolour += ((unsigned int)(g * 255.0f)) << 8;
-        argbcolour += ((unsigned int)(r * 255.0f)) << 16;
-        argbcolour &= 0x00FFFFFF;
-        return nearestcolours[argbcolour];
+        const int R = (argbcolour & 0x00FF0000) >> 16;
+        const int G = (argbcolour & 0x0000FF00) >> 8;
+        const int B = argbcolour & 0x000000FF;
+        float l = SRGBtoLMS[0] * SRGBtoLinearLUT[R] + SRGBtoLMS[1] * SRGBtoLinearLUT[G] + SRGBtoLMS[2] * SRGBtoLinearLUT[B];
+        float m = SRGBtoLMS[3] * SRGBtoLinearLUT[R] + SRGBtoLMS[4] * SRGBtoLinearLUT[G] + SRGBtoLMS[5] * SRGBtoLinearLUT[B];
+        float s = SRGBtoLMS[6] * SRGBtoLinearLUT[R] + SRGBtoLMS[7] * SRGBtoLinearLUT[G] + SRGBtoLMS[8] * SRGBtoLinearLUT[B];
+        l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+        float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+        float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
+        float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        float sat = sqrtf(a * a + b * b);
+        float hue = atan2f(b, a);
+        const unsigned int matind1 = (x & 0x03) + 4 * (y & 0x03);
+        const unsigned int matind2 = ((x + 1) & 0x03) + 4 * ((y + 3) & 0x03);
+        const unsigned int matind3 = ((x + 2) & 0x03) + 4 * ((y + 1) & 0x03);
+        const float midsat = -satditherfactor * bayermatrix4[matind2];
+        L += ditherfactor * bayermatrix4[matind1];
+        sat *= 1.0f + midsat;
+        sat += midsat * 0.5f;
+        hue += hueditherfactor * bayermatrix4[matind3];
+        a = sat * cosf(hue);
+        b = sat * sinf(hue);
+        return GetClosestOKLabColour(L, a, b);
     }
 
-    inline unsigned int GetClosestYUVColourAccel(float y, float u, float v)
+    inline unsigned int BayerDither8x8(const unsigned int argbcolour, const unsigned int x, const unsigned int y)
     {
-        float r = YUVtoRGB[0] * y + YUVtoRGB[1] * u + YUVtoRGB[2] * v;
-        float g = YUVtoRGB[3] * y + YUVtoRGB[4] * u + YUVtoRGB[5] * v;
-        float b = YUVtoRGB[6] * y + YUVtoRGB[7] * u + YUVtoRGB[8] * v;
-        int temp = (int)(b * 255.0f);
-        unsigned int argbcolour = (temp > 0xFF) ? 0xFF : ((temp < 0x00) ? 0x00 : temp);
-        temp = (int)(g * 255.0f);
-        argbcolour += (temp > 0xFF) ? 0xFF00 : ((temp < 0x00) ? 0x0000 : (temp << 8));
-        temp = (int)(r * 255.0f);
-        argbcolour += (temp > 0xFF) ? 0xFF0000 : ((temp < 0x00) ? 0x000000 : (temp << 16));
-        return nearestcolours[argbcolour];
+        const int R = (argbcolour & 0x00FF0000) >> 16;
+        const int G = (argbcolour & 0x0000FF00) >> 8;
+        const int B = argbcolour & 0x000000FF;
+        float l = SRGBtoLMS[0] * SRGBtoLinearLUT[R] + SRGBtoLMS[1] * SRGBtoLinearLUT[G] + SRGBtoLMS[2] * SRGBtoLinearLUT[B];
+        float m = SRGBtoLMS[3] * SRGBtoLinearLUT[R] + SRGBtoLMS[4] * SRGBtoLinearLUT[G] + SRGBtoLMS[5] * SRGBtoLinearLUT[B];
+        float s = SRGBtoLMS[6] * SRGBtoLinearLUT[R] + SRGBtoLMS[7] * SRGBtoLinearLUT[G] + SRGBtoLMS[8] * SRGBtoLinearLUT[B];
+        l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+        float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+        float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
+        float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        float sat = sqrtf(a * a + b * b);
+        float hue = atan2f(b, a);
+        const unsigned int matind1 = (x & 0x07) + 8 * (y & 0x07);
+        const unsigned int matind2 = ((x + 1) & 0x07) + 8 * ((y + 6) & 0x07);
+        const unsigned int matind3 = ((x + 4) & 0x07) + 8 * ((y + 3) & 0x07);
+        const float midsat = -satditherfactor * bayermatrix8[matind2];
+        L += ditherfactor * bayermatrix8[matind1];
+        sat *= 1.0f + midsat;
+        sat += midsat * 0.5f;
+        hue += hueditherfactor * bayermatrix8[matind3];
+        a = sat * cosf(hue);
+        b = sat * sinf(hue);
+        return GetClosestOKLabColour(L, a, b);
     }
 
-    inline unsigned int OrderedDither2x2(unsigned int argbcolour, unsigned int x, unsigned int y)
+    inline unsigned int VoidClusterDither16x16(const unsigned int argbcolour, const unsigned int x, const unsigned int y)
     {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        floatcol[1] += ditherfactor * odithermatrix2[(x & 0x01) + 2 * (y & 0x01)];
-        floatcol[2] += ditherfactor * odithermatrix2[(x & 0x01) + 2 * (y & 0x01)];
-        floatcol[3] += ditherfactor * odithermatrix2[(x & 0x01) + 2 * (y & 0x01)];
-        return GetClosestColourAccel(floatcol[1], floatcol[2], floatcol[3]);
-    }
-
-    inline unsigned int OrderedDither4x4(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        floatcol[1] += ditherfactor * odithermatrix4[(x & 0x03) + 4 * (y & 0x03)];
-        floatcol[2] += ditherfactor * odithermatrix4[(x & 0x03) + 4 * (y & 0x03)];
-        floatcol[3] += ditherfactor * odithermatrix4[(x & 0x03) + 4 * (y & 0x03)];
-        return GetClosestColourAccel(floatcol[1], floatcol[2], floatcol[3]);
-    }
-
-    inline unsigned int OrderedDither8x8(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        floatcol[1] += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        floatcol[2] += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        floatcol[3] += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        return GetClosestColourAccel(floatcol[1], floatcol[2], floatcol[3]);
-    }
-
-    inline unsigned int OrderedDither8x8WithYUV(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        float cy = RGBtoYUV[0] * floatcol[1] + RGBtoYUV[1] * floatcol[2] + RGBtoYUV[2] * floatcol[3]; //Y
-        float u = RGBtoYUV[3] * floatcol[1] + RGBtoYUV[4] * floatcol[2] + RGBtoYUV[5] * floatcol[3]; //U
-        float v = RGBtoYUV[6] * floatcol[1] + RGBtoYUV[7] * floatcol[2] + RGBtoYUV[8] * floatcol[3]; //V
-        float sat = sqrtf(u * u + v * v);
-        float hue = atan2f(v, u);
-        cy += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        sat -= satditherfactor * odithermatrix8[((x - 3) & 0x07) + 8 * ((y - 7) & 0x07)];
-        hue += hueditherfactor * odithermatrix8[((x + 2) & 0x07) + 8 * ((y - 5) & 0x07)];
-        u = sat * cosf(hue);
-        v = sat * sinf(hue);
-        return GetClosestYUVColour(cy, u, v);
-    }
-
-    inline unsigned int OrderedDither8x8WithYUVAccel(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        float cy = RGBtoYUV[0] * floatcol[1] + RGBtoYUV[1] * floatcol[2] + RGBtoYUV[2] * floatcol[3]; //Y
-        float u = RGBtoYUV[3] * floatcol[1] + RGBtoYUV[4] * floatcol[2] + RGBtoYUV[5] * floatcol[3]; //U
-        float v = RGBtoYUV[6] * floatcol[1] + RGBtoYUV[7] * floatcol[2] + RGBtoYUV[8] * floatcol[3]; //V
-        float sat = sqrtf(u * u + v * v);
-        float hue = atan2f(v, u);
-        cy += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        sat -= satditherfactor * odithermatrix8[((x - 3) & 0x07) + 8 * ((y - 7) & 0x07)];
-        hue += hueditherfactor * odithermatrix8[((x + 2) & 0x07) + 8 * ((y - 5) & 0x07)];
-        u = sat * cosf(hue);
-        v = sat * sinf(hue);
-        return GetClosestYUVColourAccel(cy, u, v);
-    }
-
-    inline unsigned int OrderedDither8x8WithYIQ(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        float cy = RGBtoYIQ[0] * floatcol[1] + RGBtoYIQ[1] * floatcol[2] + RGBtoYIQ[2] * floatcol[3]; //Y
-        float i = RGBtoYIQ[3] * floatcol[1] + RGBtoYIQ[4] * floatcol[2] + RGBtoYIQ[5] * floatcol[3]; //I
-        float q = RGBtoYIQ[6] * floatcol[1] + RGBtoYIQ[7] * floatcol[2] + RGBtoYIQ[8] * floatcol[3]; //Q
-        float sat = sqrtf(i * i + q * q);
-        float hue = atan2f(i, q);
-        cy += ditherfactor * odithermatrix8[(x & 0x07) + 8 * (y & 0x07)];
-        sat -= satditherfactor * odithermatrix8[((x - 3) & 0x07) + 8 * ((y - 7) & 0x07)];
-        hue += hueditherfactor * odithermatrix8[((x + 2) & 0x07) + 8 * ((y - 5) & 0x07)];
-        q = sat * cosf(hue);
-        i = sat * sinf(hue);
-        return GetClosestYIQColour(cy, i, q);
-    }
-    
-    inline unsigned int VoidClusterDither16x16WithYIQ(unsigned int argbcolour, unsigned int x, unsigned int y)
-    {
-        float floatcol[4];
-        floatcol[0] = ((float)((argbcolour & 0xFF000000) >> 24)) / 255.0f; //A
-        floatcol[1] = ((float)((argbcolour & 0x00FF0000) >> 16)) / 255.0f; //R
-        floatcol[2] = ((float)((argbcolour & 0x0000FF00) >> 8)) / 255.0f; //G
-        floatcol[3] = ((float)(argbcolour & 0x000000FF)) / 255.0f; //B
-        float cy = RGBtoYIQ[0] * floatcol[1] + RGBtoYIQ[1] * floatcol[2] + RGBtoYIQ[2] * floatcol[3]; //Y
-        float i = RGBtoYIQ[3] * floatcol[1] + RGBtoYIQ[4] * floatcol[2] + RGBtoYIQ[5] * floatcol[3]; //I
-        float q = RGBtoYIQ[6] * floatcol[1] + RGBtoYIQ[7] * floatcol[2] + RGBtoYIQ[8] * floatcol[3]; //Q
-        float sat = sqrtf(i * i + q * q);
-        float hue = atan2f(i, q);
-        //This extra index messing around is to reduce the appearance of patterning
-        const unsigned int matind = (x & 0x0F) + 16 * (y & 0x0F);
-        const unsigned int matind1 = (matind + (y / 16) * (7 + 11 * (y / 32))) & 0xFF;
-        const unsigned int matind2 = (matind + (y / 16) * (9 - 13 * (y / 32))) & 0xFF;
-        const unsigned int matind3 = (matind + (y / 16) * (19 + 24 * (y / 32))) & 0xFF;
-        cy += ditherfactor * vcdithermatrix16_1[matind1];
-        sat += satditherfactor * vcdithermatrix16_2[matind2];
-        hue += hueditherfactor * vcdithermatrix16_3[matind3];
-        q = sat * cosf(hue);
-        i = sat * sinf(hue);
-        return GetClosestYIQColour(cy, i, q);
-    }
-
-    inline unsigned int VoidClusterDither16x16WithLab(const unsigned int argbcolour, const unsigned int x, const unsigned int y)
-    {
-        const int R = (argbcolour & 0x00FF0000) >> 16; //R
-        const int G = (argbcolour & 0x0000FF00) >> 8; //G
-        const int B = argbcolour & 0x000000FF; //B
-        const float ciex = (SRGBtoXYZ[0] * SRGBtoLinearLUT[R] + SRGBtoXYZ[1] * SRGBtoLinearLUT[G] + SRGBtoXYZ[2] * SRGBtoLinearLUT[B]) / D65_X; //X
-        const float ciey = (SRGBtoXYZ[3] * SRGBtoLinearLUT[R] + SRGBtoXYZ[4] * SRGBtoLinearLUT[G] + SRGBtoXYZ[5] * SRGBtoLinearLUT[B]) / D65_Y; //Y
-        const float ciez = (SRGBtoXYZ[6] * SRGBtoLinearLUT[R] + SRGBtoXYZ[7] * SRGBtoLinearLUT[G] + SRGBtoXYZ[8] * SRGBtoLinearLUT[B]) / D65_Z; //Z
-        float L = 1.16f * LabTransferFunctionLerp(ciey) - 0.16f; //L*
-        float a = 5.0f * (LabTransferFunctionLerp(ciex) - LabTransferFunctionLerp(ciey)); //a*
-        float b = 2.0f * (LabTransferFunctionLerp(ciey) - LabTransferFunctionLerp(ciez)); //b*
+        const int R = (argbcolour & 0x00FF0000) >> 16;
+        const int G = (argbcolour & 0x0000FF00) >> 8;
+        const int B = argbcolour & 0x000000FF;
+        float l = SRGBtoLMS[0] * SRGBtoLinearLUT[R] + SRGBtoLMS[1] * SRGBtoLinearLUT[G] + SRGBtoLMS[2] * SRGBtoLinearLUT[B];
+        float m = SRGBtoLMS[3] * SRGBtoLinearLUT[R] + SRGBtoLMS[4] * SRGBtoLinearLUT[G] + SRGBtoLMS[5] * SRGBtoLinearLUT[B];
+        float s = SRGBtoLMS[6] * SRGBtoLinearLUT[R] + SRGBtoLMS[7] * SRGBtoLinearLUT[G] + SRGBtoLMS[8] * SRGBtoLinearLUT[B];
+        l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+        float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+        float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
+        float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
         float sat = sqrtf(a * a + b * b);
         float hue = atan2f(b, a);
         //This extra index messing around is to reduce the appearance of patterning
         const unsigned int matind = (x & 0x0F) + 16 * (y & 0x0F);
-        const unsigned int matind1 = (matind + (y / 16) * (7 + 11 * (y / 32))) & 0xFF;
+        const unsigned int matind1 = (matind + (y / 16) * (7 + 12 * (y / 32))) & 0xFF;
         const unsigned int matind2 = (matind + (y / 16) * (9 - 13 * (y / 32))) & 0xFF;
         const unsigned int matind3 = (matind + (y / 16) * (19 + 24 * (y / 32))) & 0xFF;
+        const float midsat = satditherfactor * vcdithermatrix16_2[matind2];
         L += ditherfactor * vcdithermatrix16_1[matind1];
-        sat += satditherfactor * vcdithermatrix16_2[matind2];
+        sat *= 1.0f + midsat;
+        sat += midsat * 0.5f;
         hue += hueditherfactor * vcdithermatrix16_3[matind3];
         a = sat * cosf(hue);
         b = sat * sinf(hue);
-        return GetClosestLabColour(L, a, b);
-    }
-
-    inline void RegenerateColourMap()
-    {
-        for (unsigned int i = 0; i < 0x01000000; i++)
-        {
-            nearestcolours[i] = GetClosestColour(i);
-        }
+        return GetClosestOKLabColour(L, a, b);
     }
 
     inline int GetSampleRateSpec(float samplerate)
@@ -745,14 +480,10 @@ private:
     unsigned char** actualdisplayplanes;
     bool alreadyOpen;
     unsigned int palette[16];
-    unsigned int nearestcolours[0x01000000];
     float floatpal[16][4];
-    float yuvpal[16][3];
-    float yiqpal[16][3];
-    float Labpal[16][4];
-    float Labpalvec[4][16]; //to aid vectorisation
+    float OKLabpal[16][3];
+    float OKLabpalvec[3][16]; //to aid vectorisation
     float uvbias;
-    float ibias;
     unsigned int colind[640 * 400];
     unsigned int** matchesoffset;
     unsigned int** matcheslength;

@@ -333,7 +333,6 @@ void TryOpenFile(HWND hWnd) //Just look at how many safety checks there are!
                                                 SetDlgItemInt(workForm, IDC_SATDITHERFACEDIT, (UINT)(conv->GetSaturationDitherFactor() * 1000.0f), FALSE);
                                                 SetDlgItemInt(workForm, IDC_HUEDITHERFACEDIT, (UINT)(conv->GetHueDitherFactor() * 1000.0f), FALSE);
                                                 SetDlgItemInt(workForm, IDC_UVBEDIT, (UINT)(conv->GetUVBias() * 1000.0f), FALSE);
-                                                SetDlgItemInt(workForm, IDC_IBIASEDIT, (UINT)(conv->GetIBias() * 1000.0f), FALSE);
                                             }
                                             outItem->Release();
                                         }
@@ -597,16 +596,6 @@ LRESULT CALLBACK FormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (conv != nullptr)
                 {
                     conv->SetUVBias(((float)GetDlgItemInt(hWnd, IDC_UVBEDIT, NULL, FALSE)) / 1000.0f);
-                    repaintPreview = true;
-                }
-            }
-            break;
-        case IDC_IBIASEDIT:
-            if (HIWORD(wParam) == EN_CHANGE)
-            {
-                if (conv != nullptr)
-                {
-                    conv->SetIBias(((float)GetDlgItemInt(hWnd, IDC_IBIASEDIT, NULL, FALSE)) / 1000.0f);
                     repaintPreview = true;
                 }
             }
