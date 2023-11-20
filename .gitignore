@@ -4,4 +4,6 @@ Release/
 x64/
 98VideoConverter/Debug/
 98VideoConverter/x64/
+gtk/bin/
+gtk/obj/
 *.user
