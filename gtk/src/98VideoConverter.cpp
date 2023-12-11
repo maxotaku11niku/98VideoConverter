@@ -3,13 +3,11 @@
 // This is the main application root
 // This software uses code of FFmpeg (http://ffmpeg.org) licensed under the LGPLv2.1 (http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
 
+#include <gtkmm/filechooserdialog.h>
 #include "98VideoConverter.h"
-#include "MainWindow.h"
 
-static const char* aboutMessage =
-"98VideoConverter, Version 0.5.0\n\
-Copyright (C) Maxim Hoxha 2022-2023\n\
-This software uses libraries from the FFmpeg project under the LGPL v2.1 and GPL v2\n\
+static const char* licenseString =
+"This software uses libraries from the FFmpeg project under the LGPL v2.1 and GPL v2\n\
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.\n\
 You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.";
@@ -24,17 +22,17 @@ static const char* uiXML =
             "<section>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_Open...</attribute>"
-                    "<atrribute name='action'>file.open</attribute>"
+                    "<attribute name='action'>app.file.open</attribute>"
                 "</item>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_Export...</attribute>"
-                    "<atrribute name='action'>file.export</attribute>"
+                    "<attribute name='action'>app.file.export</attribute>"
                 "</item>"
             "</section>"
             "<section>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_Quit</attribute>"
-                    "<atrribute name='action'>file.quit</attribute>"
+                    "<attribute name='action'>app.file.quit</attribute>"
                 "</item>"
             "</section>"
         "</submenu>"
@@ -43,11 +41,11 @@ static const char* uiXML =
             "<section>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_Output Settings...</attribute>"
-                    "<atrribute name='action'>edit.settings</attribute>"
+                    "<attribute name='action'>app.edit.settings</attribute>"
                 "</item>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_Palette...</attribute>"
-                    "<atrribute name='action'>edit.palette</attribute>"
+                    "<attribute name='action'>app.edit.palette</attribute>"
                 "</item>"
             "</section>"
         "</submenu>"
@@ -56,12 +54,20 @@ static const char* uiXML =
             "<section>"
                 "<item>"
                     "<attribute name='label' translatable='yes'>_About...</attribute>"
-                    "<atrribute name='action'>help.about</attribute>"
+                    "<attribute name='action'>app.help.about</attribute>"
                 "</item>"
             "</section>"
         "</submenu>"
     "</menu>"
 "</interface>";
+
+Glib::RefPtr<VideoConverter98> curVconv;
+
+//A stupid wrapper necessitated by the fact I can't pass member function pointers without specifying the class it's coming from (VideoConverterEngine must not have any hard references to the environment it's being called from)
+bool ProgressReport(unsigned int frameNum)
+{
+    return curVconv->EncodeProgressCallback(frameNum);
+}
 
 VideoConverter98::VideoConverter98() : Gtk::Application()
 {
@@ -77,6 +83,15 @@ Glib::RefPtr<VideoConverter98> VideoConverter98::create()
 void VideoConverter98::on_startup()
 {
     Gtk::Application::on_startup();
+
+    aboutDialog.set_program_name("98VideoConverter");
+    aboutDialog.set_version("0.5.0");
+    aboutDialog.set_copyright("Copyright (C) Maxim Hoxha 2022-2023");
+    aboutDialog.set_comments("Converts videos into .98v format.");
+    aboutDialog.set_license(licenseString);
+    aboutDialog.set_website("https://maxotaku11niku.github.io/");
+    aboutDialog.set_website_label("My website");
+    aboutDialog.signal_response().connect(sigc::mem_fun(*this, &VideoConverter98::OnAboutDialogResponse));
 
     add_action("file.open", sigc::mem_fun(*this, &VideoConverter98::OnMenuFileOpen));
     add_action("file.export", sigc::mem_fun(*this, &VideoConverter98::OnMenuFileExport));
@@ -100,7 +115,8 @@ void VideoConverter98::on_activate()
 
 void VideoConverter98::CreateWindow()
 {
-    MainWindow* mwin = new MainWindow();
+    mwin = new MainWindow();
+    mwin->conv = conv;
     add_window(*mwin);
     mwin->signal_hide().connect(sigc::bind<Gtk::Window*>(sigc::mem_fun(*this, &VideoConverter98::OnHideWindow), mwin));
     mwin->show_all();
@@ -113,12 +129,60 @@ void VideoConverter98::OnHideWindow(Gtk::Window* window)
 
 void VideoConverter98::OnMenuFileOpen()
 {
+    Gtk::FileChooserDialog dialog("Open File", Gtk::FILE_CHOOSER_ACTION_OPEN);
+    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
+    dialog.add_button("_Open", Gtk::RESPONSE_OK);
 
+    auto typeFilter = Gtk::FileFilter::create();
+    typeFilter->set_name("Video files");
+    typeFilter->add_pattern("*.avi");
+    typeFilter->add_pattern("*.gif");
+    typeFilter->add_pattern("*.mkv");
+    typeFilter->add_pattern("*.mov");
+    typeFilter->add_pattern("*.mp4");
+    typeFilter->add_pattern("*.mpeg");
+    typeFilter->add_pattern("*.mpg");
+    typeFilter->add_pattern("*.wmv");
+    typeFilter->add_pattern("*.webm");
+    dialog.add_filter(typeFilter);
+
+    int result = dialog.run();
+
+    switch(result)
+    {
+        case(Gtk::RESPONSE_OK):
+            conv->OpenForDecodeVideo((char*)dialog.get_filename().c_str());
+            mwin->SetEditView();
+            break;
+        case(Gtk::RESPONSE_CANCEL):
+            break;
+    }
 }
 
 void VideoConverter98::OnMenuFileExport()
 {
-    
+    Gtk::FileChooserDialog dialog("Export To", Gtk::FILE_CHOOSER_ACTION_SAVE);
+    dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
+    dialog.add_button("_Export", Gtk::RESPONSE_OK);
+
+    auto typeFilter = Gtk::FileFilter::create();
+    typeFilter->set_name("98V files");
+    typeFilter->add_pattern("*.98v");
+    typeFilter->add_pattern("*.98V");
+    dialog.add_filter(typeFilter);
+
+    int result = dialog.run();
+
+    switch(result)
+    {
+        case(Gtk::RESPONSE_OK):
+            mwin->DisableConfig();
+            conv->EncodeVideo((char*)dialog.get_filename().c_str(), ProgressReport);
+            mwin->EnableConfig();
+            break;
+        case(Gtk::RESPONSE_CANCEL):
+            break;
+    }
 }
 
 void VideoConverter98::OnMenuFileQuit()
@@ -144,12 +208,32 @@ void VideoConverter98::OnMenuEditPalette()
 
 void VideoConverter98::OnMenuHelpAbout()
 {
-    
+    aboutDialog.show();
+    aboutDialog.present();
+}
+
+void VideoConverter98::OnAboutDialogResponse(int responseID)
+{
+    switch (responseID)
+    {
+        case Gtk::RESPONSE_CLOSE:
+        case Gtk::RESPONSE_CANCEL:
+        case Gtk::RESPONSE_DELETE_EVENT:
+            aboutDialog.hide();
+            break;
+    }
+}
+
+bool VideoConverter98::EncodeProgressCallback(unsigned int frameNum)
+{
+    mwin->RollingUpdateViewUpdate();
+    return false;
 }
 
 int main (int argc, char* argv[])
 {
     Glib::RefPtr<VideoConverter98> vconv98 = VideoConverter98::create();
+    curVconv = vconv98;
     return vconv98->run(argc, argv);
 }
 /*/ //Former Win32 API stuffs

@@ -1,4 +1,5 @@
 .vs/
+.kdev4/
 Debug/
 Release/
 x64/

@@ -8,13 +8,17 @@
 #include <glibmm.h>
 #include <gtkmm/application.h>
 #include <gtkmm/builder.h>
+#include <gtkmm/aboutdialog.h>
 #include "ConverterEngine.h"
+#include "MainWindow.h"
 
 class VideoConverter98 : public Gtk::Application
 {
 public:
     static Glib::RefPtr<VideoConverter98> create();
     inline VideoConverterEngine* getConv() { return conv; };
+
+    bool EncodeProgressCallback(unsigned int frameNum);
 
 protected:
     VideoConverter98();
@@ -32,7 +36,10 @@ private:
     void OnMenuEditSettings();
     void OnMenuEditPalette();
     void OnMenuHelpAbout();
+    void OnAboutDialogResponse(int responseID);
 
     Glib::RefPtr<Gtk::Builder> builderRef;
+    Gtk::AboutDialog aboutDialog;
+    MainWindow* mwin;
     VideoConverterEngine* conv;
 };

@@ -1,54 +1,95 @@
-comma := ,
-empty :=
-space := $(empty) $(empty)
 # Directories
-TARGET	:= bin
-BUILD	:= obj
-SOURCES	:= src
-LIBS	:= lib
-GENASM	:= genasm
+TARGET  := bin
+EXE     := 98videoconverter
+BUILD   := obj
+SOURCES := src
+GENASM  := genasm
 # Find source files
-export CFILES	:= $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-export FULLCFILES	:= $(addprefix $(SOURCES)/,$(CFILES))
-export CPPFILES	:= $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-export FULLCPPFILES	:= $(addprefix $(SOURCES)/,$(CPPFILES))
-export OFILES	:= $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
-export FULLOFILES	:= $(addprefix $(BUILD)/,$(OFILES))
-export GENASMFILESC	:= $(addprefix $(GENASM)/,$(CFILES:.c=.asm))
-export GENASMFILESCPP	:= $(addprefix $(GENASM)/,$(CPPFILES:.cpp=.asm))
-# Common flags
-export CFLAGS := -fopenmp -idirafter ./src/include `pkg-config gtkmm-3.0 --cflags`
-export CXXFLAGS	:= $(CFLAGS) -DGLIBMM_DISABLE_DEPRECATED -DGIOMM_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED
-export DEBUGFLAGS := -Og
-export RELFLAGS := -O3
-export LINKFLAGS := -L $(LIBS) -O -s --gc-sections
-export LINKLIBS := avcodec avformat avutil swresample swscale
-export LINKS := $(addprefix -l,$(LINKLIBS))
-export GCCLINKS := -Wl,$(subst $(space),$(comma),$(strip $(LINKFLAGS))) $(LINKS) `pkg-config gtkmm-3.0 --libs`
+export CFILES       := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+export FULLCFILES   := $(addprefix $(SOURCES)/,$(CFILES))
+export CPPFILES     := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+export FULLCPPFILES := $(addprefix $(SOURCES)/,$(CPPFILES))
+export HEADERS      := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.h)))
+export FULLHEADERS  := $(addprefix $(SOURCES)/,$(HEADERS))
+export GENASMFILES  := $(addprefix $(GENASM)/,$(CFILES:.c=.asm) $(CPPFILES:.cpp=.asm))
+export OFILESC      := $(CFILES:.c=.o)
+export OFILESCPP    := $(CPPFILES:.cpp=.o)
+export OFILES       := $(OFILESC) $(OFILESCPP)
+export FULLOFILES   := $(addprefix $(BUILD)/,$(OFILES))
+# Flags and libraries
+export CFLAGSBASE       := -fopenmp `pkg-config gtkmm-3.0 --cflags`
+export CFLAGSDEBUG      := $(CFLAGSBASE) -Og
+export CFLAGSRELEASE    := $(CFLAGSBASE) -O3 -flto
+export CFLAGS           := $(CFLAGSBASE)
+export CXXFLAGS         := $(CFLAGS) -DGLIBMM_DISABLE_DEPRECATED -DGIOMM_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED
+export LINKFLAGSBASE    :=
+export LINKFLAGSDEBUG   := $(LINKFLAGSBASE)
+export LINKFLAGSRELEASE := $(LINKFLAGSBASE) -Wl,-s
+export LINKFLAGS        := $(LINKFLAGSBASE)
+export LINKLIBS         := -lavcodec -lavformat -lavutil -lswscale -lswresample `pkg-config gtkmm-3.0 --libs`
 
-.PHONY : showasm
+# Define some variable overrides
+default : CFLAGS = $(CFLAGSRELEASE)
+native : CFLAGS = $(CFLAGSRELEASE) -march=native
+debug : CFLAGS = $(CFLAGSDEBUG)
 
-all : $(TARGET)/98videoconverter $(BUILD) $(TARGET)
+default : LINKFLAGS = $(LINKFLAGSRELEASE)
+native : LINKFLAGS = $(LINKFLAGSRELEASE)
+debug : LINKFLAGS = $(LINKFLAGSDEBUG)
+
+.PHONY : default native debug showasm clean cleanasm install-linux
+
+all : default
+
+#Builds for the current host OS, but assumes a basic variant of the current processor architecture
+default : $(BUILD) $(TARGET) $(TARGET)/$(EXE)
+
+#Builds specifically for this machine
+native : $(BUILD) $(TARGET) $(TARGET)/$(EXE)
+
+#Build a debug-friendly version
+debug : $(BUILD) $(TARGET) $(TARGET)/$(EXE)
+
+#Compiles the source files to assembly language for curiosity's sake
+showasm : $(GENASM) $(GENASMFILES)
+
+#Cleans the build directory
+clean : $(BUILD) $(TARGET)
+	rm -rf $(BUILD)
+	rm -rf $(TARGET)
+	mkdir -p $(BUILD)
+	mkdir -p $(TARGET)
+
+#Removes the generated assembly files
+cleanasm : $(GENASM)
+	rm -rf $(GENASM)
+
+#Copies output executable to /usr/local/bin/ (with confirmation)
+install-linux : $(TARGET)/$(EXE)
+	sudo cp $^ /usr/local/bin/
 	
-$(BUILD):
-	mkdir -p $@
+$(BUILD) :
+	mkdir -p $(BUILD)
 
-$(TARGET):
-	mkdir -p $@
-	
-$(TARGET)/98videoconverter : $(FULLOFILES)
-	g++ -o $(TARGET)/98videoconverter $^ $(CXXFLAGS) $(GCCLINKS)
+$(TARGET) :
+	mkdir -p $(TARGET)
+
+$(GENASM) :
+	mkdir -p $(GENASM)
+
+$(TARGET)/$(EXE) : $(FULLOFILES)
+	g++ $(CFLAGS) $(CXXFLAGS) $(LINKFLAGS) -o $@ $^ $(LINKLIBS)
+
+$(FULLOFILES) : $(FULLCFILES) $(FULLCPPFILES) $(FULLHEADERS)
 
 $(BUILD)/%.o : $(SOURCES)/%.c
-	gcc -o $@ $< -c $(RELFLAGS) $(CFLAGS)
+	gcc -c $(CFLAGS) -o $@ $<
 
 $(BUILD)/%.o : $(SOURCES)/%.cpp
-	g++ -o $@ $< -c $(RELFLAGS) $(CXXFLAGS)
-
-showasm	: $(GENASMFILESC) $(GENASMFILESCPP)
+	g++ -c $(CFLAGS) $(CXXFLAGS) -o $@ $<
 
 $(GENASM)/%.asm	: $(SOURCES)/%.c
-	gcc $< -S -o $@ -c $(RELFLAGS) $(CFLAGS)
+	gcc -c -O3 -S -o $@ $<
 
 $(GENASM)/%.asm	: $(SOURCES)/%.cpp
-	g++ $< -S -o $@ -c $(RELFLAGS) $(CXXFLAGS)
+	g++ -c -O3 $(CXXFLAGS) -S -o $@ $<

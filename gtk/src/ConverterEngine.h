@@ -9,11 +9,11 @@
 
 extern "C"
 {
-#include "include/libavcodec/avcodec.h"
-#include "include/libavformat/avformat.h"
-#include "include/libswresample/swresample.h"
-#include "include/libswscale/swscale.h"
-#include "include/libavutil/hwcontext.h"
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
+#include <libavutil/hwcontext.h>
 }
 
 
@@ -101,25 +101,9 @@ constexpr float vcdithermatrix16_3[256] = {  0.48828125f,  0.37890625f,  0.01562
                                             -0.04296875f, -0.34375f,    -0.1953125f,   0.453125f,   -0.40234375f, -0.25f,       -0.078125f,    0.1875f,     -0.46484375f,  0.109375f,    0.44921875f, -0.3359375f,  -0.06640625f,  0.1484375f,   0.2421875f,  -0.24609375f,
                                              0.1796875f,  -0.47265625f,  0.140625f,    0.26171875f,  0.05078125f, -0.140625f,    0.484375f,    0.24609375f, -0.0390625f,  -0.1640625f,   0.3125f,      0.21484375f, -0.22265625f, -0.4921875f,   0.03515625f, -0.109375f };
 
-constexpr float YUVtoRGB[9] = { 1.0f,      0.0f,  1.13983f,
-                                1.0f, -0.39465f, -0.58060f,
-                                1.0f,  2.03211f,      0.0f };
-
-constexpr float RGBtoYUV[9] = {    0.299f,    0.587f,    0.114f,
-                                -0.14713f, -0.28886f,    0.436f,
-                                   0.615f, -0.51499f, -0.10001f };
-
-constexpr float YIQtoRGB[9] = { 1.0f,  0.955942f,  0.620796f,
-                                1.0f, -0.271990f, -0.647199f,
-                                1.0f, -1.106766f,  1.704271f };
-
-constexpr float RGBtoYIQ[9] = { 0.299f,     0.587f,      0.114f,
-                                0.595915f, -0.274583f,  -0.321338f,
-                                0.211559f, -0.522742f,   0.311191f };
-
-constexpr float SRGBtoXYZ[9] = { 0.4124f, 0.3576f, 0.1805f,
-                                 0.2126f, 0.7152f, 0.0722f,
-                                 0.0193f, 0.1192f, 0.9505f };
+constexpr float OkLabK1 = 0.206f;
+constexpr float OkLabK2 = 0.03f;
+constexpr float OkLabK3 = 1.17087378640776f;
 
 constexpr float SRGBtoLMS[9] = { 0.4122214708f, 0.5363325363f, 0.0514459929f,
                                  0.2119034982f, 0.6806995451f, 0.1073969566f,
@@ -170,12 +154,13 @@ public:
     void EncodeVideo(char* outFileName, bool (*progressCallback)(unsigned int) = NULL);
     void OpenForDecodeVideo(char* inFileName);
     unsigned char* GrabFrame(int framenumber);
+    unsigned char* ReprocessGrabbedFrame();
     void CloseDecoder();
     inline int GetOrigFrameNumber() { return innumFrames; };
     inline unsigned char* GetConvertedImageData() { return convertedFrame; };
     inline unsigned char* GetSimulatedOutput() { return actualdisplaybuffer; };
     inline unsigned char* GetRescaledInputFrame() { return inputrescaledframe; };
-    inline int GetBitrate() { return maxwordsperframe; };
+    inline int GetBitrate() { return maxwordsperframe * 2; };
     inline float GetDitherFactor() { return ditherfactor; };
     inline float GetSaturationDitherFactor() { return satditherfactor; };
     inline float GetHueDitherFactor() { return hueditherfactor; };
@@ -184,7 +169,7 @@ public:
     inline bool GetIsHalfVerticalResolution() { return isHalfVerticalResolution; };
     inline int GetFrameSkip() { return frameskip; };
     inline bool GetIsStereo() { return isStereo; };
-    inline void SetBitrate(int wpf) { maxwordsperframe = wpf; };
+    inline void SetBitrate(int bpf) { maxwordsperframe = bpf / 2; };
     inline void SetDitherFactor(float ditfac) { ditherfactor = ditfac; };
     inline void SetSaturationDitherFactor(float ditfac) { satditherfactor = ditfac; };
     inline void SetHueDitherFactor(float ditfac) { hueditherfactor = ditfac; };
@@ -236,6 +221,7 @@ private:
         float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
         float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
         float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        L = (OkLabK3 * L - OkLabK1 + sqrtf((OkLabK3 * L - OkLabK1) * (OkLabK3 * L - OkLabK1) + 4.0f * OkLabK2 * OkLabK3 * L)) * 0.5f;
         float sat = sqrtf(a * a + b * b);
         float hue = atan2f(b, a);
         const unsigned int matind1 = (x & 0x01) + 2 * (y & 0x01);
@@ -263,6 +249,7 @@ private:
         float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
         float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
         float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        L = (OkLabK3 * L - OkLabK1 + sqrtf((OkLabK3 * L - OkLabK1) * (OkLabK3 * L - OkLabK1) + 4.0f * OkLabK2 * OkLabK3 * L)) * 0.5f;
         float sat = sqrtf(a * a + b * b);
         float hue = atan2f(b, a);
         const unsigned int matind1 = (x & 0x03) + 4 * (y & 0x03);
@@ -290,6 +277,7 @@ private:
         float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
         float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
         float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        L = (OkLabK3 * L - OkLabK1 + sqrtf((OkLabK3 * L - OkLabK1) * (OkLabK3 * L - OkLabK1) + 4.0f * OkLabK2 * OkLabK3 * L)) * 0.5f;
         float sat = sqrtf(a * a + b * b);
         float hue = atan2f(b, a);
         const unsigned int matind1 = (x & 0x07) + 8 * (y & 0x07);
@@ -317,6 +305,7 @@ private:
         float L = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
         float a = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
         float b = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
+        L = (OkLabK3 * L - OkLabK1 + sqrtf((OkLabK3 * L - OkLabK1) * (OkLabK3 * L - OkLabK1) + 4.0f * OkLabK2 * OkLabK3 * L)) * 0.5f;
         float sat = sqrtf(a * a + b * b);
         float hue = atan2f(b, a);
         //This extra index messing around is to reduce the appearance of patterning

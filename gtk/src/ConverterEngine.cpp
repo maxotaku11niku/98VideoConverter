@@ -8,64 +8,48 @@
 #include <omp.h>
 extern "C"
 {
-	#include "include/libavutil/imgutils.h"
-	#include "include/libavutil/opt.h"
+	#include <libavutil/imgutils.h>
+	#include <libavutil/opt.h>
 }
 
 enum AVPixelFormat VideoConverterEngine::staticPixFmt; //bad kludge
 
 const int outWidth = PC_98_WIDTH; //Fix output to 640x400, the total screen resolution of the PC-98
-const int outHeight = PC_98_HEIGHT; //   AARRGGBB
+const int outHeight = PC_98_HEIGHT; //   AABBGGRR
 const unsigned int basepalette[16] = { 0xFF111111, //This palette I believe has good colour coverage
-								       0xFF771111,
-                                       0xFF227733,
-                                       0xFFDD4444, 
-                                       0xFF3333BB,
-									   0xFF33AAFF,
+								       0xFF111177,
+                                       0xFF337722,
+                                       0xFF4444DD,
+                                       0xFFBB3333,
+									   0xFFFFAA33,
 									   0xFF55DD55,
-									   0xFF88FF55, 
+									   0xFF55FF88,
 									   0xFF777777,
 									   0xFFBB33BB,
 									   0xFFFF77FF,
-									   0xFFFFBB77, 
-									   0xFFCCBB33,
-									   0xFF99FFFF,
-									   0xFFFFFF66,
+									   0xFF77BBFF,
+									   0xFF33BBCC,
+									   0xFFFFFF99,
+									   0xFF66FFFF,
 									   0xFFFFFFFF };
 
 const unsigned int rgbpalette[16] =      {  0xFF000000, //This palette is a simplistic RGB palette
-											0xFFFF0000,
-											0xFF00FF00,
-											0xFFFFFF00,
 											0xFF0000FF,
-											0xFFFF00FF,
+											0xFF00FF00,
 											0xFF00FFFF,
+											0xFFFF0000,
+											0xFFFF00FF,
+											0xFFFFFF00,
 											0xFFFFFFFF,
                                             0xFF000000,
-											0xFF000000, 
-											0xFF000000, 
 											0xFF000000,
-											0xFF000000, 
-											0xFF000000, 
+											0xFF000000,
+											0xFF000000,
+											0xFF000000,
+											0xFF000000,
 											0xFF000000,
 											0xFF000000 };
 
-const unsigned int octreepalette[16] = { 0xFF111111, //This palette is an untweaked palette found by octree search. It may not be any good
-									     0xFF992222,
-									     0xFF666622,
-									     0xFFBB4444,
-									     0xFF4444BB,
-									     0xFFDD2266,
-									     0xFF33BB44,
-									     0xFF66DD22,
-									     0xFFBB33CC,
-									     0xFFDD99DD,
-									     0xFFBBBB44,
-									     0xFFDD6699,
-									     0xFF6699DD,
-									     0xFF44BBBB,
-									     0xFF22DD99,
-									     0xFFFFFFFF };
 									   
 const unsigned int greyscalepalette[16] = { 0xFF000000, //This palette is optimised such that a near-pure black and white video compresses well (i.e. the Bad Apple!! video)
 											0xFFFFFFFF,
@@ -101,23 +85,6 @@ const unsigned int bwpalette[16] = { 0xFF000000, //This palette is just pure bla
 									 0xFF000000,
 									 0xFFFFFFFF };
 
-const unsigned int lumchrompalette[16] = { 0xFF000000, //This palette cleanly separates luma and chroma
-                                           0xFF333333,
-										   0xFF999999, 
-										   0xFFFFFFFF,
-										   0xFF220000, 
-										   0xFF770000, 
-										   0xFFCC0000, 
-										   0xFFFF0000,
-										   0xFF002200,
-										   0xFF007700,
-										   0xFF00CC00,
-										   0xFF00FF00, 
-										   0xFF000022,
-										   0xFF000077,
-										   0xFF0000CC,
-										   0xFF0000FF };
-
 VideoConverterEngine::VideoConverterEngine()
 {
 	alreadyOpen = false;
@@ -132,7 +99,9 @@ VideoConverterEngine::VideoConverterEngine()
 		float m = SRGBtoLMS[3] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoLMS[4] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoLMS[5] * SRGBGammaTransform(floatpal[i][3]);
 		float s = SRGBtoLMS[6] * SRGBGammaTransform(floatpal[i][1]) + SRGBtoLMS[7] * SRGBGammaTransform(floatpal[i][2]) + SRGBtoLMS[8] * SRGBGammaTransform(floatpal[i][3]);
 		l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
-		OKLabpal[i][0] = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+		float labL = CRLMStoOKLab[0] * l + CRLMStoOKLab[1] * m + CRLMStoOKLab[2] * s;
+		labL = (OkLabK3 * labL - OkLabK1 + sqrtf((OkLabK3 * labL - OkLabK1) * (OkLabK3 * labL - OkLabK1) + 4.0f * OkLabK2 * OkLabK3 * labL)) * 0.5f;
+		OKLabpal[i][0] = labL;
 		OKLabpal[i][1] = CRLMStoOKLab[3] * l + CRLMStoOKLab[4] * m + CRLMStoOKLab[5] * s;
 		OKLabpal[i][2] = CRLMStoOKLab[6] * l + CRLMStoOKLab[7] * m + CRLMStoOKLab[8] * s;
 		OKLabpalvec[0][i] = OKLabpal[i][0];
@@ -172,8 +141,8 @@ VideoConverterEngine::VideoConverterEngine()
 	maxwordsperframe = 10000; //This quality parameter is preferred to the other ones
 	frameskip = 0;
 	outsampformat = AVSampleFormat::AV_SAMPLE_FMT_S32;
-	outlayout = { AVChannelOrder::AV_CHANNEL_ORDER_NATIVE, 2, 1 << AVChannel::AV_CHAN_FRONT_CENTER }; //Use stereo as input to the ADPCM encoder
-	hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
+	outlayout = AV_CHANNEL_LAYOUT_STEREO; //Use stereo as input to the ADPCM encoder
+	hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI;
 	isForcedBuzzerAudio = false;
 	isHalfVerticalResolution = false;
 }
@@ -1202,6 +1171,48 @@ unsigned char* VideoConverterEngine::GrabFrame(int framenumber)
 	return convertedFrame;
 }
 
+unsigned char * VideoConverterEngine::ReprocessGrabbedFrame()
+{
+	int tly = topLeftY;
+	int outh = outHeight;
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+	{
+		outh /= 2;
+	}
+
+	//Convert it for display
+	unsigned int* inframeCol = (unsigned int*)vidscaleData[0];
+	unsigned int* outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * tly); //Cheeky reinterpretation
+	unsigned int* outframeColLineDouble = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + 1));
+	if (isHalfVerticalResolution) //640x200 resolution makes the image look twice as tall as it logically is
+	{
+		for (int i = 0; i < outh; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol = VoidClusterDither16x16(*inframeCol++, j, i);
+				*outframeColLineDouble++ = *outframeCol++;
+			}
+			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 2));
+			outframeColLineDouble = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i * 2 + 3));
+		}
+	}
+	else
+	{
+		for (int i = 0; i < outh; i++)
+		{
+			for (int j = 0; j < outWidth; j++)
+			{
+				*outframeCol++ = VoidClusterDither16x16(*inframeCol++, j, i);
+			}
+			outframeCol = ((unsigned int*)convertedFrame) + (topLeftX + PC_98_WIDTH * (tly + i + 1));
+		}
+	}
+
+	return convertedFrame;
+}
+
+
 //I thought this was necessary to set up hardware acceleration
 enum AVPixelFormat VideoConverterEngine::GetHWFormat(AVCodecContext* ctx, const enum AVPixelFormat* pixfmts)
 {
@@ -1307,9 +1318,9 @@ void VideoConverterEngine::OpenForDecodeVideo(char* inFileName)
 		topLeftX = 0;
 		topLeftY = 0;
 	}
-	scalercontext = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
-	scalercontexthalfheight = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight/2, AVPixelFormat::AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
-	vidscaleBufsize = av_image_alloc(vidscaleData, vidscaleLineSize, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_BGRA, 1);
+	scalercontext = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+	scalercontexthalfheight = sws_getContext(inWidth, inHeight, inPixFormat, outWidth, outHeight/2, AVPixelFormat::AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+	vidscaleBufsize = av_image_alloc(vidscaleData, vidscaleLineSize, outWidth, outHeight, AVPixelFormat::AV_PIX_FMT_RGBA, 1);
 	sws_scale(scalercontext, vidorigData, vidorigLineSize, 0, inHeight, vidscaleData, vidscaleLineSize);
 	alreadyOpen = true;
 	totalTime = (((double)(vidstream->duration)) * ((double)vidstream->time_base.num)) / ((double)vidstream->time_base.den);
